@@ -124,6 +124,9 @@ const Exam = () => {
         }
 
         console.log('Attempt data received:', data.data);
+        console.log('Attempt data type:', typeof data.data);
+        console.log('Attempt data keys:', data.data ? Object.keys(data.data) : 'null');
+        console.log('Attempt ID from data:', data.data?.id);
         setAttempt(data.data);
 
         // Fetch test and questions
@@ -468,6 +471,13 @@ const Exam = () => {
       console.log('Submitting final exam with attempt:', attempt);
       console.log('Attempt ID:', attempt.id);
       console.log('Attempt status:', attempt.status);
+      console.log('Attempt object keys:', Object.keys(attempt));
+      
+      // Validate attempt object
+      if (!attempt || !attempt.id) {
+        console.error('Invalid attempt object:', attempt);
+        throw new Error('Invalid attempt data - missing ID');
+      }
 
       // First try the Supabase function
       try {
@@ -511,6 +521,14 @@ const Exam = () => {
 
       } catch (functionError) {
         console.log('Falling back to manual exam finalization');
+        
+        // Validate attempt again before fallback
+        if (!attempt || !attempt.id) {
+          console.error('Invalid attempt object in fallback:', attempt);
+          throw new Error('Invalid attempt data - missing ID');
+        }
+        
+        console.log('Using attempt ID for fallback:', attempt.id);
         
         // Fallback: Manually finalize the exam
         const now = new Date();
