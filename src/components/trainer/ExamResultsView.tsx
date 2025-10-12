@@ -146,7 +146,7 @@ const ExamResultsView = () => {
       if (error) throw error;
 
              // Get batch information for all users
-       const userIds = (resultsData || []).map(result => (result.profiles as any).id).filter(Boolean);
+       const userIds = (resultsData || []).map(result => result.user_id).filter(Boolean);
        const { data: batchMembersData } = await supabase
          .from('batch_members')
          .select(`
@@ -161,10 +161,14 @@ const ExamResultsView = () => {
          batchMap.set(member.user_id, (member.batches as any).name);
        });
 
+       console.log('Batch members data:', batchMembersData);
+       console.log('Batch map:', Object.fromEntries(batchMap));
+       console.log('User IDs:', userIds);
+
        const processedResults: ExamResult[] = (resultsData || []).map(result => {
          const timeDiff = new Date(result.submitted_at).getTime() - new Date(result.started_at).getTime();
          const timeTakenMinutes = Math.round(timeDiff / (1000 * 60));
-         const userId = (result.profiles as any).id;
+         const userId = result.user_id;
          
          return {
            id: result.id,
