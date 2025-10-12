@@ -465,32 +465,150 @@ const Exam = () => {
     try {
       setIsSubmitted(true);
 
-      const { data, error } = await supabase.functions.invoke('finalize-attempt', {
-        body: { attempt_id: attempt.id }
-      });
+      console.log('Submitting final exam with attempt:', attempt);
+      console.log('Attempt ID:', attempt.id);
+      console.log('Attempt status:', attempt.status);
 
-      if (error || !data.success) {
-        throw new Error(data?.message || 'Failed to submit exam');
+      // First try the Supabase function
+      try {
+        const { data, error } = await supabase.functions.invoke('finalize-attempt', {
+          body: { attempt_id: attempt.id }
+        });
+
+        console.log('Finalize attempt response:', { data, error });
+
+        if (error) {
+          console.warn('Supabase function failed, falling back to manual submission:', error);
+          throw error; // This will trigger the fallback
+        }
+
+        if (!data.success) {
+          console.warn('Supabase function returned error, falling back:', data);
+          throw new Error(data.message || 'Function returned error');
+        }
+
+        // Success with Supabase function
+        toast({
+          title: "Exam Submitted Successfully!",
+          description: `Your score: ${data.data.score}/${data.data.max_score} (${Math.round((data.data.score / data.data.max_score) * 100)}%)`,
+        });
+
+        // Trigger a custom event to refresh dashboard components
+        window.dispatchEvent(new CustomEvent('examSubmitted', { 
+          detail: { 
+            testId: test?.id,
+            score: data.data.score,
+            maxScore: data.data.max_score
+          } 
+        }));
+
+        // Navigate back to dashboard after 3 seconds
+        setTimeout(() => {
+          navigate('/dashboard');
+        }, 3000);
+
+        return; // Exit successfully
+
+      } catch (functionError) {
+        console.log('Falling back to manual exam finalization');
+        
+        // Fallback: Manually finalize the exam
+        const now = new Date();
+        const endsAt = new Date(attempt.ends_at);
+        const status = now >= endsAt ? 'auto_submitted' : 'submitted';
+
+        // Get all submissions for this attempt
+        const { data: submissions } = await supabase
+          .from('submissions')
+          .select(`
+            question_id,
+            verdict,
+            passed_count,
+            total_count
+          `)
+          .eq('attempt_id', attempt.id)
+          .eq('run_type', 'submit');
+
+        let finalScore = 0;
+        const questionScores = new Map();
+
+        // Calculate score for each question (best submission per question)
+        for (const submission of submissions || []) {
+          const questionId = submission.question_id;
+          const passedCount = submission.passed_count || 0;
+          const totalCount = submission.total_count || 1;
+          
+          // Get points for this question from test_questions table
+          const { data: testQuestion } = await supabase
+            .from('test_questions')
+            .select('points')
+            .eq('test_id', attempt.test_id)
+            .eq('question_id', questionId)
+            .single();
+          
+          const points = testQuestion?.points || 100;
+          
+          // Calculate score based on percentage of test cases passed
+          const scorePercentage = totalCount > 0 ? passedCount / totalCount : 0;
+          const questionScore = Math.round(points * scorePercentage);
+          
+          if (!questionScores.has(questionId)) {
+            questionScores.set(questionId, 0);
+          }
+          
+          // Keep the best score for this question
+          if (questionScore > questionScores.get(questionId)) {
+            questionScores.set(questionId, questionScore);
+          }
+        }
+
+        // Sum up all question scores
+        finalScore = Array.from(questionScores.values()).reduce((sum, score) => sum + score, 0);
+
+        // Get max possible score
+        const { data: testQuestions } = await supabase
+          .from('test_questions')
+          .select('points')
+          .eq('test_id', attempt.test_id);
+
+        const maxScore = testQuestions?.reduce((sum, q) => sum + (q.points || 100), 0) || 100;
+
+        // Finalize attempt with calculated score
+        const { error: updateError } = await supabase
+          .from('attempts')
+          .update({ 
+            status,
+            submitted_at: now.toISOString(),
+            score: finalScore,
+            max_score: maxScore
+          })
+          .eq('id', attempt.id);
+
+        if (updateError) {
+          console.error('Error updating attempt:', updateError);
+          throw new Error('Failed to finalize exam');
+        }
+
+        toast({
+          title: "Exam Submitted Successfully!",
+          description: `Your score: ${finalScore}/${maxScore} (${Math.round((finalScore / maxScore) * 100)}%)`,
+        });
+
+        // Trigger a custom event to refresh dashboard components
+        window.dispatchEvent(new CustomEvent('examSubmitted', { 
+          detail: { 
+            testId: test?.id,
+            score: finalScore,
+            maxScore: maxScore
+          } 
+        }));
+
+        // Navigate back to dashboard after 3 seconds
+        setTimeout(() => {
+          navigate('/dashboard');
+        }, 3000);
       }
 
-      toast({
-        title: "Exam Submitted Successfully!",
-        description: `Your score: ${data.data.score}/${data.data.max_score} (${Math.round((data.data.score / data.data.max_score) * 100)}%)`,
-      });
-
-      // Trigger a custom event to refresh dashboard components
-      window.dispatchEvent(new CustomEvent('examSubmitted', { 
-        detail: { 
-          testId: test?.id,
-          score: data.data.score,
-          maxScore: data.data.max_score
-        } 
-      }));
-
-      // Navigate back to dashboard after 3 seconds
-      setTimeout(() => {
-        navigate('/dashboard');
-      }, 3000);
     } catch (error: any) {
       console.error('Error submitting exam:', error);
       toast({
