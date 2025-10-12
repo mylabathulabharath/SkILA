@@ -325,6 +325,18 @@ const Exam = () => {
         const totalCount = results.length;
         const verdict = passedCount === totalCount ? 'passed' : 'failed';
         
+        // Get question points for proper scoring
+        const { data: testQuestion } = await supabase
+          .from('test_questions')
+          .select('points')
+          .eq('test_id', attempt.test_id)
+          .eq('question_id', questions[currentQuestionIndex].id)
+          .single();
+
+        const questionPoints = testQuestion?.points || 100;
+        const scorePercentage = totalCount > 0 ? passedCount / totalCount : 0;
+        const questionScore = Math.round(questionPoints * scorePercentage);
+
         // Manually store submission in database
         const { data: submissionData, error: submissionError } = await supabase
           .from('submissions')
@@ -367,6 +379,49 @@ const Exam = () => {
             .insert(caseResults);
         }
 
+        // Update attempt score
+        try {
+          // Get current attempt score
+          const { data: currentAttempt } = await supabase
+            .from('attempts')
+            .select('score')
+            .eq('id', attempt.id)
+            .single();
+
+          // Get all previous submissions for this question to find best score
+          const { data: previousSubmissions } = await supabase
+            .from('submissions')
+            .select('passed_count, total_count')
+            .eq('attempt_id', attempt.id)
+            .eq('question_id', questions[currentQuestionIndex].id)
+            .eq('run_type', 'submit')
+            .order('created_at', { ascending: false });
+
+          // Find the best score for this question
+          let bestScore = 0;
+          if (previousSubmissions && previousSubmissions.length > 0) {
+            bestScore = Math.max(...previousSubmissions.map(sub => {
+              const percentage = sub.total_count > 0 ? sub.passed_count / sub.total_count : 0;
+              return Math.round(questionPoints * percentage);
+            }));
+          }
+
+          // Only update if this submission has a better score
+          if (questionScore > bestScore) {
+            const newTotalScore = (currentAttempt?.score || 0) - bestScore + questionScore;
+            
+            await supabase
+              .from('attempts')
+              .update({ 
+                score: newTotalScore
+              })
+              .eq('id', attempt.id);
+          }
+        } catch (scoreError) {
+          console.error('Error updating attempt score:', scoreError);
+          // Continue anyway
+        }
+
         setSubmissionStatus('idle');
         
         toast({
@@ -384,8 +439,8 @@ const Exam = () => {
         window.dispatchEvent(new CustomEvent('examSubmitted', { 
           detail: { 
             testId: test?.id,
-            score: passedCount,
-            maxScore: totalCount
+            score: questionScore,
+            maxScore: questionPoints
           } 
         }));
       }
@@ -411,7 +466,7 @@ const Exam = () => {
       setIsSubmitted(true);
 
       const { data, error } = await supabase.functions.invoke('finalize-attempt', {
-        body: { attempt_id: attempt.attempt_id }
+        body: { attempt_id: attempt.id }
       });
 
       if (error || !data.success) {
