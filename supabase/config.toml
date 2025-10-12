@@ -1,0 +1,10 @@
+project_id = "hnrrruofqimutiqipqfh"
+
+[functions.start-attempt]
+verify_jwt = true
+
+[functions.run-code]
+verify_jwt = true
+
+[functions.finalize-attempt]
+verify_jwt = true

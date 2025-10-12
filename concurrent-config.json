@@ -1,0 +1,25 @@
+{
+  "concurrent_processing": {
+    "max_concurrent_submissions": 3,
+    "batch_size": 3,
+    "polling_interval_ms": 2000,
+    "max_retry_attempts": 3,
+    "timeout_seconds": 30,
+    "priority_levels": {
+      "run": 1,
+      "submit": 2
+    }
+  },
+  "judge0": {
+    "timeout_seconds": 2,
+    "memory_limit_kb": 128000,
+    "cpu_time_limit_seconds": 2,
+    "max_polling_attempts": 30,
+    "polling_interval_ms": 500
+  },
+  "monitoring": {
+    "health_check_interval_ms": 30000,
+    "metrics_collection": true,
+    "log_level": "info"
+  }
+}
