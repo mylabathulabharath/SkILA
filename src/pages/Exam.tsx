@@ -518,7 +518,7 @@ const Exam = () => {
         const status = now >= endsAt ? 'auto_submitted' : 'submitted';
 
         // Get all submissions for this attempt
-        const { data: submissions } = await supabase
+        const { data: submissions, error: submissionsError } = await supabase
           .from('submissions')
           .select(`
             question_id,
@@ -529,8 +529,17 @@ const Exam = () => {
           .eq('attempt_id', attempt.id)
           .eq('run_type', 'submit');
 
+        console.log('Submissions query result:', { submissions, submissionsError });
+        
+        if (submissionsError) {
+          console.error('Error fetching submissions:', submissionsError);
+          throw new Error(`Failed to fetch submissions: ${submissionsError.message}`);
+        }
+
         let finalScore = 0;
         const questionScores = new Map();
+
+        console.log('Calculating scores for submissions:', submissions);
 
         // Calculate score for each question (best submission per question)
         for (const submission of submissions || []) {
@@ -538,19 +547,28 @@ const Exam = () => {
           const passedCount = submission.passed_count || 0;
           const totalCount = submission.total_count || 1;
           
+          console.log(`Processing question ${questionId}: ${passedCount}/${totalCount} passed`);
+          
           // Get points for this question from test_questions table
-          const { data: testQuestion } = await supabase
+          const { data: testQuestion, error: testQuestionError } = await supabase
             .from('test_questions')
             .select('points')
             .eq('test_id', attempt.test_id)
             .eq('question_id', questionId)
             .single();
           
+          if (testQuestionError) {
+            console.error(`Error fetching test question for ${questionId}:`, testQuestionError);
+          }
+          
           const points = testQuestion?.points || 100;
+          console.log(`Question ${questionId} points: ${points}`);
           
           // Calculate score based on percentage of test cases passed
           const scorePercentage = totalCount > 0 ? passedCount / totalCount : 0;
           const questionScore = Math.round(points * scorePercentage);
+          
+          console.log(`Question ${questionId} score: ${questionScore} (${(scorePercentage * 100).toFixed(1)}%)`);
           
           if (!questionScores.has(questionId)) {
             questionScores.set(questionId, 0);
@@ -564,6 +582,8 @@ const Exam = () => {
 
         // Sum up all question scores
         finalScore = Array.from(questionScores.values()).reduce((sum, score) => sum + score, 0);
+        console.log('Final calculated score:', finalScore);
+        console.log('Question scores map:', Object.fromEntries(questionScores));
 
         // Get max possible score
         const { data: testQuestions } = await supabase
@@ -574,7 +594,15 @@ const Exam = () => {
         const maxScore = testQuestions?.reduce((sum, q) => sum + (q.points || 100), 0) || 100;
 
         // Finalize attempt with calculated score
-        const { error: updateError } = await supabase
+        console.log('Updating attempt with:', {
+          id: attempt.id,
+          status,
+          submitted_at: now.toISOString(),
+          score: finalScore,
+          max_score: maxScore
+        });
+
+        const { data: updateData, error: updateError } = await supabase
           .from('attempts')
           .update({ 
             status,
@@ -582,11 +610,20 @@ const Exam = () => {
             score: finalScore,
             max_score: maxScore
           })
-          .eq('id', attempt.id);
+          .eq('id', attempt.id)
+          .select();
+
+        console.log('Update result:', { updateData, updateError });
 
         if (updateError) {
           console.error('Error updating attempt:', updateError);
-          throw new Error('Failed to finalize exam');
+          console.error('Update error details:', {
+            message: updateError.message,
+            details: updateError.details,
+            hint: updateError.hint,
+            code: updateError.code
+          });
+          throw new Error(`Failed to finalize exam: ${updateError.message}`);
         }
 
         toast({
