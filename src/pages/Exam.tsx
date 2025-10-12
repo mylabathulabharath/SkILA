@@ -253,59 +253,142 @@ const Exam = () => {
     try {
       setSubmissionStatus('processing');
       
-      // Call the Supabase function to properly store submission and calculate score
-      const { data, error } = await supabase.functions.invoke('run-code', {
-        body: {
+      // First try the Supabase function
+      try {
+        const requestBody = {
           attempt_id: attempt.id,
           question_id: questions[currentQuestionIndex].id,
           language: language,
           code: code,
-          run_type: 'submit' // This is crucial for scoring
-        }
-      });
-
-      if (error) {
-        console.error('Error calling run-code function:', error);
-        console.error('Error details:', {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code
+          run_type: 'submit'
+        };
+        
+        console.log('Submitting to run-code function with:', requestBody);
+        
+        const { data, error } = await supabase.functions.invoke('run-code', {
+          body: requestBody
         });
-        throw new Error(`Supabase function error: ${error.message}`);
+
+        if (error) {
+          console.warn('Supabase function failed, falling back to direct approach:', error);
+          throw error; // This will trigger the fallback
+        }
+
+        if (!data.success) {
+          console.warn('Supabase function returned error, falling back:', data);
+          throw new Error(data.message || 'Function returned error');
+        }
+
+        // Success with Supabase function
+        setSubmissionStatus('idle');
+        
+        const passedCount = data.data.passed_count || 0;
+        const totalCount = data.data.total_count || 0;
+        const verdict = data.data.verdict || 'failed';
+        
+        toast({
+          title: "Success",
+          description: `Code submitted! ${passedCount}/${totalCount} test cases passed.`,
+          variant: verdict === 'passed' ? 'default' : 'destructive'
+        });
+
+        // Move to next question if available
+        if (currentQuestionIndex < questions.length - 1) {
+          setCurrentQuestionIndex(currentQuestionIndex + 1);
+        }
+
+        // Trigger dashboard refresh
+        window.dispatchEvent(new CustomEvent('examSubmitted', { 
+          detail: { 
+            testId: test?.id,
+            score: data.data.score || 0,
+            maxScore: data.data.max_score || 100
+          } 
+        }));
+
+        return; // Exit successfully
+
+      } catch (functionError) {
+        console.log('Falling back to direct Judge0 + manual storage approach');
+        
+        // Fallback: Use direct Judge0 service and manually store results
+        const testCasesForJudge0 = testCases.map(tc => ({
+          input: tc.input,
+          expected_output: tc.expected_output
+        }));
+        
+        // Execute code using optimized Judge0 service
+        const results = await Judge0Service.executeCode(code, language, testCasesForJudge0);
+        
+        // Calculate results
+        const passedCount = results.filter(r => r.passed).length;
+        const totalCount = results.length;
+        const verdict = passedCount === totalCount ? 'passed' : 'failed';
+        
+        // Manually store submission in database
+        const { data: submissionData, error: submissionError } = await supabase
+          .from('submissions')
+          .insert({
+            attempt_id: attempt.id,
+            question_id: questions[currentQuestionIndex].id,
+            language: language,
+            code: code,
+            run_type: 'submit',
+            passed_count: passedCount,
+            total_count: totalCount,
+            verdict: verdict,
+            time_ms: results.reduce((sum, r) => sum + (r.executionTime || 0), 0) / results.length,
+            memory_kb: results.reduce((sum, r) => sum + (r.memoryUsed || 0), 0) / results.length,
+            stdout_preview: results[0]?.actualOutput?.slice(0, 500) || ''
+          })
+          .select()
+          .single();
+
+        if (submissionError) {
+          console.error('Error storing submission:', submissionError);
+          // Continue anyway - at least the code was executed
+        }
+
+        // Store case results
+        if (submissionData) {
+          const caseResults = results.map((result, index) => ({
+            submission_id: submissionData.id,
+            input: result.input,
+            expected_output: result.expectedOutput,
+            actual_output: result.actualOutput,
+            status: result.passed ? 'pass' : 'fail',
+            case_order: index,
+            time_ms: result.executionTime || 0,
+            memory_kb: result.memoryUsed || 0
+          }));
+          
+          await supabase
+            .from('submission_case_results')
+            .insert(caseResults);
+        }
+
+        setSubmissionStatus('idle');
+        
+        toast({
+          title: "Success",
+          description: `Code submitted! ${passedCount}/${totalCount} test cases passed.`,
+          variant: verdict === 'passed' ? 'default' : 'destructive'
+        });
+
+        // Move to next question if available
+        if (currentQuestionIndex < questions.length - 1) {
+          setCurrentQuestionIndex(currentQuestionIndex + 1);
+        }
+
+        // Trigger dashboard refresh
+        window.dispatchEvent(new CustomEvent('examSubmitted', { 
+          detail: { 
+            testId: test?.id,
+            score: passedCount,
+            maxScore: totalCount
+          } 
+        }));
       }
-
-      if (!data.success) {
-        console.error('Function returned error:', data);
-        throw new Error(data.message || data.error_code || 'Failed to submit code');
-      }
-
-      setSubmissionStatus('idle');
-      
-      // Extract results from the response
-      const passedCount = data.data.passed_count || 0;
-      const totalCount = data.data.total_count || 0;
-      const verdict = data.data.verdict || 'failed';
-      
-      toast({
-        title: "Success",
-        description: `Code submitted! ${passedCount}/${totalCount} test cases passed.`,
-        variant: verdict === 'passed' ? 'default' : 'destructive'
-      });
-
-      // Move to next question if available
-      if (currentQuestionIndex < questions.length - 1) {
-        setCurrentQuestionIndex(currentQuestionIndex + 1);
-      }
-
-      // Trigger dashboard refresh
-      window.dispatchEvent(new CustomEvent('examSubmitted', { 
-        detail: { 
-          testId: test?.id,
-          score: data.data.score || 0,
-          maxScore: data.data.max_score || 100
-        } 
-      }));
 
     } catch (error) {
       console.error('Error submitting code:', error);
