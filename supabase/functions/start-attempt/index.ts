@@ -50,9 +50,13 @@ serve(async (req) => {
       );
     }
 
-    const { test_id } = await req.json();
+    const body = await req.json();
+    console.log('Request body:', body);
+    
+    const { test_id } = body;
 
     if (!test_id) {
+      console.error('Missing test_id in request body');
       return new Response(
         JSON.stringify({ 
           success: false, 
@@ -66,19 +70,25 @@ serve(async (req) => {
       );
     }
 
+    console.log('Processing test_id:', test_id);
+
     // Check if test exists
+    console.log('Checking if test exists for ID:', test_id);
     const { data: test, error: testError } = await supabaseClient
       .from('tests')
       .select('*')
       .eq('id', test_id)
       .single();
 
+    console.log('Test query result:', { test, testError });
+
     if (testError || !test) {
+      console.error('Test not found:', testError);
       return new Response(
         JSON.stringify({ 
           success: false, 
           error_code: 'TEST_NOT_FOUND',
-          message: 'Test not found' 
+          message: 'Test not found: ' + (testError?.message || 'Unknown error')
         }),
         { 
           status: 404, 
@@ -86,6 +96,8 @@ serve(async (req) => {
         }
       );
     }
+
+    console.log('Test found:', test.title);
 
     // Check if user already has an active attempt
     const { data: existingAttempt } = await supabaseClient
@@ -154,11 +166,19 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('Error in start-attempt:', error);
+    console.error('Error stack:', error.stack);
+    console.error('Error details:', {
+      message: error.message,
+      name: error.name,
+      cause: error.cause
+    });
+    
     return new Response(
       JSON.stringify({ 
         success: false, 
         error_code: 'INTERNAL_ERROR',
-        message: 'Internal server error' 
+        message: 'Internal server error: ' + error.message,
+        details: error.stack
       }),
       { 
         status: 500, 

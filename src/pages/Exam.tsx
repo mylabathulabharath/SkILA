@@ -120,7 +120,8 @@ const Exam = () => {
         });
 
         if (error || !data.success) {
-          throw new Error(data?.message || 'Failed to start attempt');
+          console.error('Start attempt error details:', { error, data });
+          throw new Error(data?.message || error?.message || 'Failed to start attempt');
         }
 
         console.log('Attempt data received:', data.data);
