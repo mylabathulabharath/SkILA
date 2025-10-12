@@ -8,19 +8,24 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
+  console.log('start-attempt function called');
+  
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
+    console.log('Creating Supabase client');
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
+    console.log('Getting auth header');
     const authHeader = req.headers.get('Authorization');
     
     if (!authHeader) {
+      console.log('No auth header found');
       return new Response(
         JSON.stringify({ 
           success: false, 
@@ -34,9 +39,11 @@ serve(async (req) => {
       );
     }
 
+    console.log('Authenticating user');
     const { data: { user }, error: authError } = await supabaseClient.auth.getUser(authHeader.replace('Bearer ', ''));
     
     if (authError || !user) {
+      console.log('Auth error:', authError);
       return new Response(
         JSON.stringify({ 
           success: false, 
@@ -50,13 +57,16 @@ serve(async (req) => {
       );
     }
 
+    console.log('User authenticated:', user.id);
+
+    console.log('Parsing request body');
     const body = await req.json();
     console.log('Request body:', body);
     
     const { test_id } = body;
 
     if (!test_id) {
-      console.error('Missing test_id in request body');
+      console.log('Missing test_id');
       return new Response(
         JSON.stringify({ 
           success: false, 
@@ -72,23 +82,21 @@ serve(async (req) => {
 
     console.log('Processing test_id:', test_id);
 
-    // Check if test exists
-    console.log('Checking if test exists for ID:', test_id);
+    // Get test details to get the actual duration
+    console.log('Fetching test details');
     const { data: test, error: testError } = await supabaseClient
       .from('tests')
-      .select('*')
+      .select('time_limit_minutes')
       .eq('id', test_id)
       .single();
 
-    console.log('Test query result:', { test, testError });
-
-    if (testError || !test) {
-      console.error('Test not found:', testError);
+    if (testError) {
+      console.error('Error fetching test:', testError);
       return new Response(
         JSON.stringify({ 
           success: false, 
           error_code: 'TEST_NOT_FOUND',
-          message: 'Test not found: ' + (testError?.message || 'Unknown error')
+          message: 'Test not found: ' + testError.message
         }),
         { 
           status: 404, 
@@ -97,33 +105,13 @@ serve(async (req) => {
       );
     }
 
-    console.log('Test found:', test.title);
+    console.log('Test found, duration:', test.time_limit_minutes, 'minutes');
 
-    // Check if user already has an active attempt
-    const { data: existingAttempt } = await supabaseClient
-      .from('attempts')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('test_id', test_id)
-      .eq('status', 'active')
-      .single();
-
-    if (existingAttempt) {
-      // Return existing attempt
-      return new Response(
-        JSON.stringify({ 
-          success: true, 
-          data: existingAttempt
-        }),
-        { 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        }
-      );
-    }
-
-    // Create new attempt
+    // Create attempt with correct duration
+    console.log('Creating new attempt');
     const now = new Date();
-    const endsAt = new Date(now.getTime() + (test.duration_minutes * 60 * 1000));
+    const durationMs = (test.time_limit_minutes || 60) * 60 * 1000; // Use test duration or default to 60 minutes
+    const endsAt = new Date(now.getTime() + durationMs);
 
     const { data: newAttempt, error: attemptError } = await supabaseClient
       .from('attempts')
@@ -145,7 +133,7 @@ serve(async (req) => {
         JSON.stringify({ 
           success: false, 
           error_code: 'ATTEMPT_CREATION_FAILED',
-          message: 'Failed to create attempt' 
+          message: 'Failed to create attempt: ' + attemptError.message
         }),
         { 
           status: 500, 
@@ -153,6 +141,8 @@ serve(async (req) => {
         }
       );
     }
+
+    console.log('Attempt created successfully:', newAttempt);
 
     return new Response(
       JSON.stringify({ 
