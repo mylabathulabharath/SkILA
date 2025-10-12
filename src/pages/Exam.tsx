@@ -5,6 +5,7 @@ import { QuestionPanel } from "@/components/exam/QuestionPanel";
 import { CodeEditor } from "@/components/exam/CodeEditor";
 import { PerformanceMonitor } from "@/components/exam/PerformanceMonitor";
 import { Judge0Service } from "@/services/judge0";
+import { supabase } from "@/integrations/supabase/client";
 
 const DEFAULT_CODE_TEMPLATES = {
   cpp: `#include <iostream>
@@ -41,7 +42,6 @@ if __name__ == "__main__":
 solution();`
 };
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
 import { useCallback } from "react";
 
 // Mock data - in a real app, this would come from Supabase
@@ -246,24 +246,39 @@ const Exam = () => {
       throw new Error('Missing required fields for code submission');
     }
 
+    if (!attempt) {
+      throw new Error('No active attempt');
+    }
+
     try {
       setSubmissionStatus('processing');
       
-      // Use test cases from the current question
-      const testCasesForJudge0 = testCases.map(tc => ({
-        input: tc.input,
-        expected_output: tc.expected_output
-      }));
-      
-      // Direct call to Judge0 service
-      const results = await Judge0Service.executeCode(code, language, testCasesForJudge0);
-      
-      // Calculate results
-      const passedCount = results.filter(r => r.passed).length;
-      const totalCount = results.length;
-      const verdict = passedCount === totalCount ? 'passed' : 'failed';
-      
+      // Call the Supabase function to properly store submission and calculate score
+      const { data, error } = await supabase.functions.invoke('run-code', {
+        body: {
+          attempt_id: attempt.id,
+          question_id: questions[currentQuestionIndex].id,
+          language: language,
+          code: code,
+          run_type: 'submit' // This is crucial for scoring
+        }
+      });
+
+      if (error) {
+        console.error('Error calling run-code function:', error);
+        throw error;
+      }
+
+      if (!data.success) {
+        throw new Error(data.message || 'Failed to submit code');
+      }
+
       setSubmissionStatus('idle');
+      
+      // Extract results from the response
+      const passedCount = data.data.passed_count || 0;
+      const totalCount = data.data.total_count || 0;
+      const verdict = data.data.verdict || 'failed';
       
       toast({
         title: "Success",
@@ -276,7 +291,15 @@ const Exam = () => {
         setCurrentQuestionIndex(currentQuestionIndex + 1);
       }
 
-      // Results are handled by the toast notification
+      // Trigger dashboard refresh
+      window.dispatchEvent(new CustomEvent('examSubmitted', { 
+        detail: { 
+          testId: test?.id,
+          score: data.data.score || 0,
+          maxScore: data.data.max_score || 100
+        } 
+      }));
+
     } catch (error) {
       console.error('Error submitting code:', error);
       setSubmissionStatus('idle');
