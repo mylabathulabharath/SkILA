@@ -8,10 +8,10 @@ export const QuickActions = () => {
 
   const actions = [
     {
-      title: "Subject-Based Tests",
+      title: "Learning Assessments",
       subtitle: "Choose language & begin",
       icon: BookOpen,
-      buttonText: "Start Test",
+      buttonText: "Start Assessment",
       gradient: "from-primary to-primary-glow",
       onClick: () => {
         // Navigate to subject selection (we'll create this later)
@@ -19,10 +19,10 @@ export const QuickActions = () => {
       }
     },
     {
-      title: "Class Tests",
-      subtitle: "See tests assigned by your trainer",
+      title: "Class Assessments",
+      subtitle: "See assessments assigned by your trainer",
       icon: Users,
-      buttonText: "View Tests",
+      buttonText: "View Assessments",
       gradient: "from-secondary to-accent",
       onClick: () => {
         // Navigate to class tests (we'll create this later)

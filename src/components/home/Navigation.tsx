@@ -65,8 +65,8 @@ export const Navigation = () => {
 
   const navItems = [
     { label: "Home", icon: Home, path: "/" },
-    { label: "Practice", icon: BookOpen, path: "/practice" },
-    { label: "Tests", icon: FileText, path: "/dashboard" },
+    { label: "Assessments", icon: BookOpen, path: "/practice" },
+    { label: "Dashboard", icon: FileText, path: "/dashboard" },
     { label: "Progress", icon: TrendingUp, path: "/progress" },
   ];
 

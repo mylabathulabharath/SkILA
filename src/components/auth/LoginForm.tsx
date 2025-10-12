@@ -115,7 +115,7 @@ export const LoginForm = () => {
         className="w-full"
         disabled={isLoading}
       >
-        {isLoading ? "Signing In..." : "Login to Portal"}
+        {isLoading ? "Signing In..." : "Login to SkILA"}
       </Button>
     </form>
   );

@@ -281,8 +281,8 @@ export const UpcomingTests = () => {
     return (
       <div className="space-y-6">
         <div>
-          <h2 className="text-2xl font-bold text-foreground mb-2">Upcoming Tests</h2>
-          <p className="text-muted-foreground">Stay prepared for your scheduled assessments</p>
+          <h2 className="text-2xl font-bold text-foreground mb-2">Upcoming Assessments</h2>
+          <p className="text-muted-foreground">Stay prepared for your scheduled learning assessments</p>
         </div>
         <Card className="border-0 bg-card-gradient">
           <CardContent className="p-8 text-center">
@@ -297,8 +297,8 @@ export const UpcomingTests = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-foreground mb-2">Upcoming Tests</h2>
-        <p className="text-muted-foreground">Stay prepared for your scheduled assessments</p>
+        <h2 className="text-2xl font-bold text-foreground mb-2">Upcoming Assessments</h2>
+        <p className="text-muted-foreground">Stay prepared for your scheduled learning assessments</p>
       </div>
 
       {tests.length > 0 ? (
@@ -363,7 +363,7 @@ export const UpcomingTests = () => {
                       onClick={() => handleStartTest(test)}
                     >
                       <Play className="w-4 h-4 mr-1" />
-                      Start Test
+                      Start Assessment
                     </Button>
                   </div>
                 </div>
@@ -375,7 +375,7 @@ export const UpcomingTests = () => {
         <Card className="border-0 bg-card-gradient">
           <CardContent className="p-8 text-center">
             <Calendar className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-foreground mb-2">No Upcoming Tests</h3>
+            <h3 className="text-lg font-semibold text-foreground mb-2">No Upcoming Assessments</h3>
             <p className="text-muted-foreground">
               You're all caught up! Check back later for new assignments.
             </p>

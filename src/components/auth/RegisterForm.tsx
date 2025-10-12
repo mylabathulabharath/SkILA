@@ -217,7 +217,7 @@ export const RegisterForm = () => {
         className="w-full"
         disabled={isLoading}
       >
-        {isLoading ? "Creating Account..." : "Create Account"}
+        {isLoading ? "Creating Account..." : "Join SkILA"}
       </Button>
     </form>
   );

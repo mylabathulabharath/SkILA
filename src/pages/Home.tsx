@@ -173,14 +173,14 @@ const Home = () => {
       <section className="container mx-auto px-4 sm:px-6 lg:px-8 py-16">
         <div className="text-center max-w-4xl mx-auto">
           <h1 className="text-5xl lg:text-7xl font-bold text-gradient mb-6">
-            Master Coding
+            SkILA
           </h1>
           <h2 className="text-3xl lg:text-5xl font-bold text-foreground mb-8">
-            Through AI-Powered Practice
+            Intelligent Learning Assessment
           </h2>
           <p className="text-xl text-muted-foreground mb-12 max-w-2xl mx-auto">
-            Challenge yourself with curated coding problems, compete with peers, 
-            and track your progress in real-time with our intelligent assessment platform.
+            Experience the future of coding education with our advanced AI-powered assessment platform. 
+            Get real-time feedback, comprehensive analytics, and personalized learning paths.
           </p>
           
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -191,7 +191,7 @@ const Home = () => {
               onClick={() => navigate('/login')}
             >
               <Play className="mr-2 h-5 w-5" />
-              Start Practicing
+              Start Learning
             </Button>
             <Button 
               size="lg" 
@@ -215,7 +215,7 @@ const Home = () => {
                 <Users className="h-8 w-8 text-white" />
               </div>
               <div className="text-3xl font-bold text-foreground">10,000+</div>
-              <p className="text-muted-foreground">Active Students</p>
+              <p className="text-muted-foreground">Active Learners</p>
             </CardContent>
           </Card>
           
@@ -225,7 +225,7 @@ const Home = () => {
                 <Code className="h-8 w-8 text-white" />
               </div>
               <div className="text-3xl font-bold text-foreground">500+</div>
-              <p className="text-muted-foreground">Coding Problems</p>
+              <p className="text-muted-foreground">Assessment Challenges</p>
             </CardContent>
           </Card>
           
@@ -235,7 +235,7 @@ const Home = () => {
                 <CheckCircle className="h-8 w-8 text-white" />
               </div>
               <div className="text-3xl font-bold text-foreground">1M+</div>
-              <p className="text-muted-foreground">Solutions Submitted</p>
+              <p className="text-muted-foreground">Assessments Completed</p>
             </CardContent>
           </Card>
           
@@ -245,7 +245,7 @@ const Home = () => {
                 <TrendingUp className="h-8 w-8 text-white" />
               </div>
               <div className="text-3xl font-bold text-foreground">95%</div>
-              <p className="text-muted-foreground">Success Rate</p>
+              <p className="text-muted-foreground">Learning Success</p>
             </CardContent>
           </Card>
         </div>
@@ -254,9 +254,9 @@ const Home = () => {
       {/* Featured Challenges */}
       <section className="container mx-auto px-4 sm:px-6 lg:px-8 py-16">
         <div className="text-center mb-12">
-          <h3 className="text-3xl font-bold text-foreground mb-4">Featured Challenges</h3>
+          <h3 className="text-3xl font-bold text-foreground mb-4">Featured Assessments</h3>
           <p className="text-muted-foreground max-w-2xl mx-auto">
-            Test your skills with these popular coding problems
+            Challenge yourself with our curated intelligent learning assessments
           </p>
         </div>
         
@@ -323,7 +323,7 @@ const Home = () => {
                     }}
                   >
                     <Play className="mr-2 h-4 w-4" />
-                    Try Challenge
+                    Start Assessment
                   </Button>
                 </CardContent>
               </Card>
@@ -332,8 +332,8 @@ const Home = () => {
         ) : (
           <div className="text-center py-12">
             <BookOpen className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-            <h3 className="text-xl font-semibold text-foreground mb-2">No Challenges Available</h3>
-            <p className="text-muted-foreground mb-6">Check back soon for new coding challenges!</p>
+            <h3 className="text-xl font-semibold text-foreground mb-2">No Assessments Available</h3>
+            <p className="text-muted-foreground mb-6">Check back soon for new intelligent learning assessments!</p>
             <Button variant="auth" onClick={() => navigate('/login')}>
               <Play className="mr-2 h-4 w-4" />
               Get Started
@@ -346,9 +346,9 @@ const Home = () => {
       <section className="container mx-auto px-4 sm:px-6 lg:px-8 py-16">
         <div className="max-w-2xl mx-auto">
           <div className="text-center mb-12">
-            <h3 className="text-3xl font-bold text-foreground mb-4">Top Performers</h3>
+            <h3 className="text-3xl font-bold text-foreground mb-4">Learning Leaders</h3>
             <p className="text-muted-foreground">
-              See how you stack up against the community
+              See how you stack up against fellow learners
             </p>
           </div>
           
@@ -399,10 +399,10 @@ const Home = () => {
                 <div className="text-center py-8">
                   <Trophy className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                   <h3 className="text-lg font-semibold text-foreground mb-2">No Rankings Yet</h3>
-                  <p className="text-muted-foreground mb-6">Be the first to start practicing and climb the leaderboard!</p>
+                  <p className="text-muted-foreground mb-6">Be the first to start learning and climb the leaderboard!</p>
                   <Button variant="auth" onClick={() => navigate('/login')}>
                     <Play className="mr-2 h-4 w-4" />
-                    Start Practicing
+                    Start Learning
                   </Button>
                 </div>
               )}
@@ -416,11 +416,11 @@ const Home = () => {
         <Card className="bg-auth-gradient text-center text-white shadow-auth">
           <CardContent className="py-16">
             <h3 className="text-3xl lg:text-4xl font-bold mb-4">
-              Ready to Level Up Your Coding Skills?
+              Ready to Transform Your Learning Journey?
             </h3>
             <p className="text-xl opacity-90 mb-8 max-w-2xl mx-auto">
-              Join thousands of students who are already improving their programming abilities 
-              with our AI-powered assessment platform.
+              Join thousands of learners who are already advancing their skills 
+              with SkILA's intelligent learning assessment platform.
             </p>
             <Button 
               size="lg" 
@@ -447,7 +447,7 @@ const Home = () => {
                 />
               </div>
               <p className="text-sm text-muted-foreground">
-                Empowering students with AI-powered coding assessments and real-time feedback.
+                Empowering learners with intelligent assessment technology, real-time feedback, and comprehensive learning analytics.
               </p>
             </div>
             
@@ -455,8 +455,8 @@ const Home = () => {
               <h4 className="font-semibold text-foreground">Platform</h4>
               <ul className="space-y-2 text-sm text-muted-foreground">
                 <li><button onClick={() => navigate('/login')} className="hover:text-primary transition-colors">Get Started</button></li>
-                <li><button onClick={() => navigate('/login')} className="hover:text-primary transition-colors">Practice Problems</button></li>
-                <li><button onClick={() => navigate('/login')} className="hover:text-primary transition-colors">Take Tests</button></li>
+                <li><button onClick={() => navigate('/login')} className="hover:text-primary transition-colors">Learning Assessments</button></li>
+                <li><button onClick={() => navigate('/login')} className="hover:text-primary transition-colors">Take Assessments</button></li>
                 <li><button onClick={() => navigate('/login')} className="hover:text-primary transition-colors">View Progress</button></li>
               </ul>
             </div>
@@ -483,7 +483,7 @@ const Home = () => {
           </div>
           
           <div className="mt-8 pt-8 border-t border-border text-center text-sm text-muted-foreground">
-            <p>&copy; 2024 AI Exam Portal. All rights reserved.</p>
+            <p>&copy; 2024 SkILA - Intelligent Learning Assessment. All rights reserved.</p>
           </div>
         </div>
       </footer>

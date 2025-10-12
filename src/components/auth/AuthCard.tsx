@@ -17,17 +17,19 @@ export const AuthCard = () => {
     const navigateByRole = async (userId: string) => {
     // Fetch user profile from Supabase
     const { data, error } = await supabase
-      .from('profiles') // replace with your table name
+      .from('profiles')
       .select('role')
-      .eq('role', "trainer")
+      .eq('id', userId)  // Fixed: Use userId instead of hardcoded role
       .single();
 
     if (error || !data) {
+      console.error('Error fetching user profile:', error);
       navigate('/dashboard'); // fallback
       return;
     }
-    console.log(data.role);
-    console.log("data fetched", data);
+    
+    console.log('User role:', data.role);
+    console.log('User data:', data);
 
     switch (data.role) {
       case 'student':
