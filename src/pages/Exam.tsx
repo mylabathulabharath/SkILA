@@ -479,6 +479,15 @@ const Exam = () => {
         throw new Error('Invalid attempt data - missing ID');
       }
 
+      // Check for existing submissions before finalizing
+      const { data: existingSubmissions, error: submissionsCheckError } = await supabase
+        .from('submissions')
+        .select('*')
+        .eq('attempt_id', attempt.id);
+
+      console.log('Existing submissions for this attempt:', existingSubmissions);
+      console.log('Submissions check error:', submissionsCheckError);
+
       // First try the Supabase function
       try {
         const { data, error } = await supabase.functions.invoke('finalize-attempt', {
@@ -486,6 +495,9 @@ const Exam = () => {
         });
 
         console.log('Finalize attempt response:', { data, error });
+        console.log('Finalize attempt data details:', data?.data);
+        console.log('Final score from function:', data?.data?.score);
+        console.log('Max score from function:', data?.data?.max_score);
 
         if (error) {
           console.warn('Supabase function failed, falling back to manual submission:', error);
