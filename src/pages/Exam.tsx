@@ -266,11 +266,18 @@ const Exam = () => {
 
       if (error) {
         console.error('Error calling run-code function:', error);
-        throw error;
+        console.error('Error details:', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        });
+        throw new Error(`Supabase function error: ${error.message}`);
       }
 
       if (!data.success) {
-        throw new Error(data.message || 'Failed to submit code');
+        console.error('Function returned error:', data);
+        throw new Error(data.message || data.error_code || 'Failed to submit code');
       }
 
       setSubmissionStatus('idle');

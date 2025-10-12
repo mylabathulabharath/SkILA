@@ -15,8 +15,8 @@ const LANGUAGE_IDS = {
   javascript: 63,
 };
 
-const JUDGE0_API_URL = "https://ce.judge0.com"; // Free Judge0 API (no auth required)
-const JUDGE0_FALLBACK_URL = "https://ce.judge0.com"; // Same API as fallback
+const JUDGE0_API_URL = "http://34.14.221.217:2358"; // Your Google VM instance
+const JUDGE0_FALLBACK_URL = "http://34.93.252.188:2358"; // Fallback endpoint
 
 const processTestCases = async (testCases: any[], code: string, language: string) => {
   const languageId = LANGUAGE_IDS[language as keyof typeof LANGUAGE_IDS];
@@ -188,11 +188,22 @@ const storeSubmissionResults = async (attemptId: string, questionId: string, lan
 };
 
 const updateAttemptScore = async (attemptId: string, questionId: string, submissionData: any, passedCount: number, totalCount: number, supabaseClient: any) => {
+  // First get the attempt to get the test_id
+  const { data: attempt } = await supabaseClient
+    .from('attempts')
+    .select('test_id')
+    .eq('id', attemptId)
+    .single();
+
+  if (!attempt) {
+    throw new Error('Attempt not found');
+  }
+
   // Get question points
   const { data: testQuestion } = await supabaseClient
     .from('test_questions')
     .select('points')
-    .eq('test_id', attemptId)
+    .eq('test_id', attempt.test_id)
     .eq('question_id', questionId)
     .single();
 
@@ -591,32 +602,47 @@ serve(async (req) => {
       );
     } catch (error) {
       console.error('Error processing test cases:', error);
+      console.error('Error stack:', error.stack);
+      console.error('Error details:', {
+        message: error.message,
+        name: error.name,
+        cause: error.cause
+      });
       
       return new Response(
         JSON.stringify({ 
           success: false, 
           error_code: 'PROCESSING_ERROR',
-          message: 'Failed to process test cases: ' + error.message 
+          message: 'Failed to process test cases: ' + error.message,
+          details: error.stack
         }),
         { 
           status: 500, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       );
     }
 
   } catch (error) {
     console.error('Error in run-code:', error);
+    console.error('Error stack:', error.stack);
+    console.error('Error details:', {
+      message: error.message,
+      name: error.name,
+      cause: error.cause
+    });
+    
     return new Response(
       JSON.stringify({ 
         success: false, 
         error_code: 'INTERNAL_ERROR',
-        message: error.message 
+        message: 'Internal server error: ' + error.message,
+        details: error.stack
       }),
       { 
         status: 500, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       }
     );
-  } 
+  }
 });
