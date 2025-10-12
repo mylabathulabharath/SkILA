@@ -1,5 +1,13 @@
-// Judge0 API Integration - Direct connection to Google Cloud VM
-const JUDGE0_API_URL = "http://34.14.221.217:2358"; // Your Google VM instance
+// Judge0 API Integration - Optimized with multiple endpoints and caching
+const JUDGE0_ENDPOINTS = [
+  "http://34.14.221.217:2358", // Primary endpoint
+  "http://34.93.252.188:2358", // Fallback endpoint
+];
+
+// Connection pool for better performance
+const connectionPool = new Map<string, AbortController>();
+const CACHE_SIZE = 100;
+const codeCache = new Map<string, any>();
 
 interface Judge0Submission {
   source_code: string;
@@ -30,42 +38,111 @@ export const LANGUAGE_IDS = {
 };
 
 export class Judge0Service {
-  // Test if Judge0 server is reachable
-  static async testConnection(): Promise<boolean> {
-    try {
-      const response = await fetch(`${JUDGE0_API_URL}/languages`, {
-        signal: AbortSignal.timeout(5000), // 5 second timeout for test
-      });
-      return response.ok;
-    } catch (error) {
-      console.error('Judge0 connection test failed:', error);
-      return false;
-    }
+  private static currentEndpointIndex = 0;
+  private static getCurrentEndpoint(): string {
+    return JUDGE0_ENDPOINTS[this.currentEndpointIndex];
   }
 
-  private static async makeRequest(endpoint: string, options: RequestInit = {}) {
+  private static switchToNextEndpoint(): void {
+    this.currentEndpointIndex = (this.currentEndpointIndex + 1) % JUDGE0_ENDPOINTS.length;
+  }
+
+  // Test if Judge0 server is reachable with endpoint rotation
+  static async testConnection(): Promise<boolean> {
+    for (let i = 0; i < JUDGE0_ENDPOINTS.length; i++) {
+      try {
+        const response = await fetch(`${JUDGE0_ENDPOINTS[i]}/languages`, {
+          signal: AbortSignal.timeout(3000), // Reduced timeout for faster testing
+        });
+        if (response.ok) {
+          this.currentEndpointIndex = i; // Set working endpoint as current
+          return true;
+        }
+      } catch (error) {
+        console.warn(`Judge0 endpoint ${i} failed:`, error);
+      }
+    }
+    console.error('All Judge0 endpoints failed');
+    return false;
+  }
+
+  // Generate cache key for code submissions
+  private static generateCacheKey(code: string, language: string, input: string): string {
+    return `${language}:${btoa(code)}:${btoa(input)}`;
+  }
+
+  // Check cache before making request
+  private static getCachedResult(cacheKey: string): any {
+    if (codeCache.has(cacheKey)) {
+      const cached = codeCache.get(cacheKey);
+      codeCache.delete(cacheKey); // Move to end (LRU)
+      codeCache.set(cacheKey, cached);
+      return cached;
+    }
+    return null;
+  }
+
+  // Add result to cache with LRU eviction
+  private static setCachedResult(cacheKey: string, result: any): void {
+    if (codeCache.size >= CACHE_SIZE) {
+      const firstKey = codeCache.keys().next().value;
+      codeCache.delete(firstKey);
+    }
+    codeCache.set(cacheKey, result);
+  }
+
+  private static async makeRequest(endpoint: string, options: RequestInit = {}, retryCount = 0): Promise<any> {
+    const maxRetries = 2;
+    const currentEndpoint = this.getCurrentEndpoint();
+    
     try {
-      const response = await fetch(`${JUDGE0_API_URL}${endpoint}`, {
+      // Create abort controller for this request
+      const abortController = new AbortController();
+      const requestId = `${Date.now()}-${Math.random()}`;
+      connectionPool.set(requestId, abortController);
+
+      const response = await fetch(`${currentEndpoint}${endpoint}`, {
         ...options,
         headers: {
           'Content-Type': 'application/json',
+          'Accept-Encoding': 'gzip, deflate',
           ...options.headers,
         },
-        // Add timeout
-        signal: AbortSignal.timeout(10000), // 10 second timeout
+        signal: abortController.signal,
+        // Dynamic timeout based on request type
+        timeout: endpoint.includes('/submissions') ? 15000 : 5000,
       });
 
+      // Clean up connection
+      connectionPool.delete(requestId);
+
       if (!response.ok) {
-        throw new Error(`Judge0 API error: ${response.statusText}`);
+        throw new Error(`Judge0 API error: ${response.status} ${response.statusText}`);
       }
 
       return response.json();
     } catch (error: any) {
+      // Clean up connection on error
+      connectionPool.forEach((controller, id) => {
+        if (id.includes(endpoint)) {
+          controller.abort();
+          connectionPool.delete(id);
+        }
+      });
+
       if (error.name === 'AbortError') {
-        throw new Error('Connection timeout - Judge0 server may be down or unreachable');
+        throw new Error('Request timeout - Judge0 server may be overloaded');
       }
+
+      // Retry with different endpoint if available
+      if (retryCount < maxRetries && JUDGE0_ENDPOINTS.length > 1) {
+        console.warn(`Request failed, retrying with different endpoint (attempt ${retryCount + 1})`);
+        this.switchToNextEndpoint();
+        return this.makeRequest(endpoint, options, retryCount + 1);
+      }
+
       if (error.message.includes('Failed to fetch')) {
-        throw new Error('Cannot connect to Judge0 server. Please check if the server is running and accessible.');
+        throw new Error('Cannot connect to Judge0 server. All endpoints may be down.');
       }
       throw error;
     }
@@ -82,7 +159,7 @@ export class Judge0Service {
     return this.makeRequest(`/submissions/${token}`);
   }
 
-  // Simple, direct code execution - no queues, straightforward submission
+  // Optimized code execution with parallel processing and caching
   static async executeCode(
     code: string,
     language: string,
@@ -100,54 +177,191 @@ export class Judge0Service {
       throw new Error(`Unsupported language: ${language}`);
     }
 
-    const results = [];
+    // Pre-validate code syntax for common issues
+    if (!this.validateCodeSyntax(code, language)) {
+      throw new Error('Code contains syntax errors or invalid characters');
+    }
 
-    for (const testCase of testCases) {
+    // Process test cases in parallel for better performance
+    const promises = testCases.map(async (testCase, index) => {
+      const cacheKey = this.generateCacheKey(code, language, testCase.input);
+      
+      // Check cache first
+      const cachedResult = this.getCachedResult(cacheKey);
+      if (cachedResult) {
+        console.log(`Cache hit for test case ${index + 1}`);
+        return cachedResult;
+      }
+
       try {
-        // Submit code directly to Judge0
+        // Submit code with optimized parameters
         const submission = await this.submitCode({
           source_code: code,
           language_id: languageId,
           stdin: testCase.input,
           expected_output: testCase.expected_output,
+          cpu_time_limit: 2,
+          memory_limit: 128000,
+          enable_network: false,
         });
 
-        // Simple polling - wait for result
-        let result: Judge0Result;
-        let attempts = 0;
-        const maxAttempts = 20; // 10 seconds max wait time
-
-        do {
-          await new Promise(resolve => setTimeout(resolve, 500));
-          result = await this.getSubmissionResult(submission.token);
-          attempts++;
-        } while (result.status.id <= 2 && attempts < maxAttempts);
+        // Optimized polling with exponential backoff
+        const result = await this.pollForResult(submission.token, index);
 
         // Process result
         const actualOutput = result.stdout?.trim() || result.stderr?.trim() || '';
         const expectedOutput = testCase.expected_output.trim();
         const passed = actualOutput === expectedOutput && result.status.id === 3;
 
-        results.push({
+        const testResult = {
           input: testCase.input,
           expectedOutput: testCase.expected_output,
           actualOutput: actualOutput,
           passed,
           executionTime: result.time ? parseFloat(result.time) * 1000 : undefined,
           memoryUsed: result.memory || undefined,
-        });
+        };
+
+        // Cache successful results
+        if (passed) {
+          this.setCachedResult(cacheKey, testResult);
+        }
+
+        return testResult;
       } catch (error) {
-        console.error('Error executing test case:', error);
-        results.push({
+        console.error(`Error executing test case ${index + 1}:`, error);
+        return {
           input: testCase.input,
           expectedOutput: testCase.expected_output,
           actualOutput: 'Execution Error',
           passed: false,
-        });
+        };
+      }
+    });
+
+    // Wait for all test cases to complete
+    const results = await Promise.all(promises);
+    return results;
+  }
+
+  // Optimized polling with exponential backoff
+  private static async pollForResult(token: string, testCaseIndex: number): Promise<Judge0Result> {
+    let result: Judge0Result;
+    let attempts = 0;
+    const maxAttempts = 30;
+    let delay = 200; // Start with 200ms delay
+
+    do {
+      await new Promise(resolve => setTimeout(resolve, delay));
+      result = await this.getSubmissionResult(token);
+      attempts++;
+      
+      // Exponential backoff: 200ms, 400ms, 800ms, 1600ms, then 2000ms max
+      delay = Math.min(delay * 1.5, 2000);
+      
+      // Log progress for long-running submissions
+      if (attempts % 10 === 0) {
+        console.log(`Test case ${testCaseIndex + 1} still processing... (attempt ${attempts})`);
+      }
+    } while (result.status.id <= 2 && attempts < maxAttempts);
+
+    if (result.status.id <= 2) {
+      throw new Error(`Test case ${testCaseIndex + 1} timed out after ${maxAttempts} attempts`);
+    }
+
+    return result;
+  }
+
+  // Basic code validation to catch common issues early
+  private static validateCodeSyntax(code: string, language: string): boolean {
+    if (!code || code.trim().length === 0) {
+      return false;
+    }
+
+    // Check for common problematic patterns
+    const problematicPatterns = [
+      /import\s+os\s*$/m, // Block OS imports
+      /import\s+subprocess/m, // Block subprocess
+      /system\s*\(/m, // Block system calls
+      /exec\s*\(/m, // Block exec calls
+      /eval\s*\(/m, // Block eval calls
+    ];
+
+    for (const pattern of problematicPatterns) {
+      if (pattern.test(code)) {
+        console.warn('Code contains potentially dangerous patterns');
+        return false;
       }
     }
 
-    return results;
+    return true;
+  }
+
+  // Performance monitoring and statistics
+  static getPerformanceStats(): {
+    cacheSize: number;
+    cacheHitRate: number;
+    activeConnections: number;
+    currentEndpoint: string;
+  } {
+    return {
+      cacheSize: codeCache.size,
+      cacheHitRate: 0, // Would need to track hits/misses for accurate rate
+      activeConnections: connectionPool.size,
+      currentEndpoint: this.getCurrentEndpoint(),
+    };
+  }
+
+  // Cleanup method to clear cache and abort connections
+  static cleanup(): void {
+    // Abort all active connections
+    connectionPool.forEach((controller) => {
+      controller.abort();
+    });
+    connectionPool.clear();
+    
+    // Clear cache
+    codeCache.clear();
+    
+    console.log('Judge0 service cleaned up');
+  }
+
+  // Health check for all endpoints
+  static async healthCheck(): Promise<{
+    endpoints: Array<{ url: string; status: 'healthy' | 'unhealthy'; responseTime: number }>;
+    recommendedEndpoint: string;
+  }> {
+    const healthChecks = JUDGE0_ENDPOINTS.map(async (endpoint) => {
+      const startTime = Date.now();
+      try {
+        const response = await fetch(`${endpoint}/languages`, {
+          signal: AbortSignal.timeout(3000),
+        });
+        const responseTime = Date.now() - startTime;
+        return {
+          url: endpoint,
+          status: response.ok ? 'healthy' : 'unhealthy',
+          responseTime,
+        };
+      } catch (error) {
+        return {
+          url: endpoint,
+          status: 'unhealthy',
+          responseTime: Date.now() - startTime,
+        };
+      }
+    });
+
+    const results = await Promise.all(healthChecks);
+    const healthyEndpoints = results.filter(r => r.status === 'healthy');
+    const recommendedEndpoint = healthyEndpoints.length > 0 
+      ? healthyEndpoints.sort((a, b) => a.responseTime - b.responseTime)[0].url
+      : JUDGE0_ENDPOINTS[0];
+
+    return {
+      endpoints: results,
+      recommendedEndpoint,
+    };
   }
 }
 

@@ -6,6 +6,7 @@ import { QuickActions } from "@/components/dashboard/QuickActions";
 import { MyProgress } from "@/components/dashboard/MyProgress";
 import { UpcomingTests } from "@/components/dashboard/UpcomingTests";
 import { RecentResults } from "@/components/dashboard/RecentResults";
+import { LearningAnalytics } from "@/components/analytics/LearningAnalytics";
 
 const Dashboard = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -57,6 +58,9 @@ const Dashboard = () => {
             <QuickActions />
             <MyProgress />
           </div>
+          
+          {/* Learning Analytics */}
+          <LearningAnalytics />
           
           {/* Recent Results and Upcoming Tests - Side by side on desktop */}
           <div className="grid gap-8 lg:grid-cols-2">

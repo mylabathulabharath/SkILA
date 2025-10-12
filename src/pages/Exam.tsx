@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { ExamHeader } from "@/components/exam/ExamHeader";
 import { QuestionPanel } from "@/components/exam/QuestionPanel";
 import { CodeEditor } from "@/components/exam/CodeEditor";
+import { PerformanceMonitor } from "@/components/exam/PerformanceMonitor";
 import { Judge0Service } from "@/services/judge0";
 
 const DEFAULT_CODE_TEMPLATES = {
@@ -422,6 +423,9 @@ const Exam = () => {
           </div>
         </div>
       </main>
+      
+      {/* Performance Monitor */}
+      <PerformanceMonitor />
     </div>
   );
 };
