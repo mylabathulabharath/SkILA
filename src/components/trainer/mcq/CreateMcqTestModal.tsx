@@ -9,20 +9,18 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Plus, BookOpen, Users, Clock, Search, Filter } from "lucide-react";
+import { Plus, BookOpen, Search, Filter } from "lucide-react";
 
-
-
-interface Question {
+interface McqQuestion {
   id: string;
-  title: string;
-  difficulty: number;
-  supported_languages: string[];
-  tags?: string | null;
-}
-
-interface QuestionWithMarks extends Question {
+  question_text: string;
+  difficulty: string;
   marks: number;
+  subject_id: string;
+  tags?: string[] | null;
+  concept_id?: string;
+  subject_name?: string;
+  concept_name?: string;
 }
 
 interface Batch {
@@ -30,22 +28,22 @@ interface Batch {
   name: string;
 }
 
-interface CreateExamModalProps {
-  onExamCreated: () => void;
+interface CreateMcqTestModalProps {
+  onTestCreated: () => void;
 }
 
-export const CreateExamModal = ({ onExamCreated }: CreateExamModalProps) => {
+export const CreateMcqTestModal = ({ onTestCreated }: CreateMcqTestModalProps) => {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [questions, setQuestions] = useState<Question[]>([]);
+  const [questions, setQuestions] = useState<McqQuestion[]>([]);
+  const [filteredQuestions, setFilteredQuestions] = useState<McqQuestion[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
   const [selectedQuestions, setSelectedQuestions] = useState<string[]>([]);
   const [questionMarks, setQuestionMarks] = useState<Record<string, number>>({});
-  const [availableTags, setAvailableTags] = useState<string[]>([]);
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const [filteredQuestions, setFilteredQuestions] = useState<Question[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<string>("newest");
+  const [subjects, setSubjects] = useState<Array<{ id: string; name: string }>>([]);
+  const [selectedSubject, setSelectedSubject] = useState<string>("all");
   const [selectedDifficulty, setSelectedDifficulty] = useState<string>("all");
   
   const [formData, setFormData] = useState({
@@ -65,27 +63,99 @@ export const CreateExamModal = ({ onExamCreated }: CreateExamModalProps) => {
     }
   }, [open]);
 
+  // Filter and sort questions
+  useEffect(() => {
+    let filtered = [...questions];
+
+    // Search filter - check tags, question text, subject, concept
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      filtered = filtered.filter(q => {
+        const matchesText = q.question_text?.toLowerCase().includes(query);
+        const matchesTags = q.tags?.some(tag => tag.toLowerCase().includes(query));
+        const matchesSubject = q.subject_name?.toLowerCase().includes(query);
+        const matchesConcept = q.concept_name?.toLowerCase().includes(query);
+        return matchesText || matchesTags || matchesSubject || matchesConcept;
+      });
+    }
+
+    // Subject filter
+    if (selectedSubject !== "all") {
+      filtered = filtered.filter(q => q.subject_id === selectedSubject);
+    }
+
+    // Difficulty filter
+    if (selectedDifficulty !== "all") {
+      filtered = filtered.filter(q => q.difficulty === selectedDifficulty);
+    }
+
+    // Sort
+    switch (sortBy) {
+      case "newest":
+        filtered.sort((a, b) => (b.id.localeCompare(a.id))); // Using ID as proxy for created_at
+        break;
+      case "oldest":
+        filtered.sort((a, b) => (a.id.localeCompare(b.id)));
+        break;
+      case "difficulty_asc":
+        const difficultyOrder: Record<string, number> = { Easy: 1, Medium: 2, Hard: 3 };
+        filtered.sort((a, b) => (difficultyOrder[a.difficulty] || 0) - (difficultyOrder[b.difficulty] || 0));
+        break;
+      case "difficulty_desc":
+        const difficultyOrderDesc: Record<string, number> = { Easy: 1, Medium: 2, Hard: 3 };
+        filtered.sort((a, b) => (difficultyOrderDesc[b.difficulty] || 0) - (difficultyOrderDesc[a.difficulty] || 0));
+        break;
+      case "marks_asc":
+        filtered.sort((a, b) => a.marks - b.marks);
+        break;
+      case "marks_desc":
+        filtered.sort((a, b) => b.marks - a.marks);
+        break;
+      case "subject":
+        filtered.sort((a, b) => (a.subject_name || '').localeCompare(b.subject_name || ''));
+        break;
+      default:
+        break;
+    }
+
+    setFilteredQuestions(filtered);
+  }, [questions, searchQuery, sortBy, selectedSubject, selectedDifficulty]);
+
   const fetchQuestions = async () => {
     try {
       const { data, error } = await supabase
-        .from('questions')
-        .select('id, title, difficulty, supported_languages, tags')
+        .from('mcq_questions')
+        .select(`
+          id, 
+          question_text, 
+          difficulty, 
+          marks, 
+          subject_id,
+          concept_id,
+          tags,
+          mcq_subjects!inner(name),
+          mcq_concepts(name)
+        `)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setQuestions(data || []);
-      setFilteredQuestions(data || []);
       
-      // Extract unique tags from all questions
-      const allTags = new Set<string>();
-      (data || []).forEach(q => {
-        if (q.tags && Array.isArray(q.tags)) {
-          q.tags.forEach(tag => allTags.add(tag));
-        }
-      });
-      setAvailableTags(Array.from(allTags).sort());
+      const formattedQuestions = (data || []).map((q: any) => ({
+        ...q,
+        subject_name: q.mcq_subjects?.name,
+        concept_name: q.mcq_concepts?.name,
+      }));
+      
+      setQuestions(formattedQuestions);
+      setFilteredQuestions(formattedQuestions);
+      
+      // Extract unique subjects for filter
+      const uniqueSubjects = Array.from(
+        new Map(formattedQuestions.map((q: any) => [q.subject_id, { id: q.subject_id, name: q.mcq_subjects?.name || 'Unknown' }])).values()
+      );
+      setSubjects(uniqueSubjects);
     } catch (error) {
-      console.error('Error fetching questions:', error);
+      console.error('Error fetching MCQ questions:', error);
       toast({
         title: "Error",
         description: "Failed to load questions",
@@ -126,10 +196,11 @@ export const CreateExamModal = ({ onExamCreated }: CreateExamModalProps) => {
         });
         return newSelected;
       } else {
-        // Add question with default marks
+        // Add question with default marks from question
+        const question = questions.find(q => q.id === questionId);
         setQuestionMarks(prevMarks => ({
           ...prevMarks,
-          [questionId]: 100 // Default marks
+          [questionId]: question?.marks || 1
         }));
         return [...prev, questionId];
       }
@@ -142,71 +213,6 @@ export const CreateExamModal = ({ onExamCreated }: CreateExamModalProps) => {
       [questionId]: Math.max(1, marks) // Ensure minimum 1 mark
     }));
   };
-
-  const handleTagFilter = (tag: string) => {
-    setSelectedTags(prev => {
-      return prev.includes(tag) 
-        ? prev.filter(t => t !== tag)
-        : [...prev, tag];
-    });
-  };
-
-  // Filter and sort questions
-  useEffect(() => {
-    let filtered = [...questions];
-
-    // Search filter - check tags, title, keywords
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase().trim();
-      filtered = filtered.filter(q => {
-        const matchesTitle = q.title?.toLowerCase().includes(query);
-        const matchesTags = q.tags?.some((tag: string) => tag.toLowerCase().includes(query));
-        return matchesTitle || matchesTags;
-      });
-    }
-
-    // Tag filter
-    if (selectedTags.length > 0) {
-      filtered = filtered.filter(q => 
-        q.tags && Array.isArray(q.tags) && 
-        selectedTags.some(tag => q.tags?.includes(tag))
-      );
-    }
-
-    // Difficulty filter
-    if (selectedDifficulty !== "all") {
-      const difficultyValue = selectedDifficulty === "easy" ? 1 : selectedDifficulty === "medium" ? 3 : 5;
-      filtered = filtered.filter(q => {
-        if (selectedDifficulty === "easy") return q.difficulty <= 2;
-        if (selectedDifficulty === "medium") return q.difficulty >= 3 && q.difficulty <= 4;
-        if (selectedDifficulty === "hard") return q.difficulty >= 5;
-        return true;
-      });
-    }
-
-    // Sort
-    switch (sortBy) {
-      case "newest":
-        filtered.sort((a, b) => (b.id.localeCompare(a.id)));
-        break;
-      case "oldest":
-        filtered.sort((a, b) => (a.id.localeCompare(b.id)));
-        break;
-      case "difficulty_asc":
-        filtered.sort((a, b) => a.difficulty - b.difficulty);
-        break;
-      case "difficulty_desc":
-        filtered.sort((a, b) => b.difficulty - a.difficulty);
-        break;
-      case "title":
-        filtered.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
-        break;
-      default:
-        break;
-    }
-
-    setFilteredQuestions(filtered);
-  }, [questions, searchQuery, sortBy, selectedTags, selectedDifficulty]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -223,42 +229,54 @@ export const CreateExamModal = ({ onExamCreated }: CreateExamModalProps) => {
     setLoading(true);
 
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      // Get subject_id from first selected question (required by schema)
+      const firstQuestion = questions.find(q => selectedQuestions.includes(q.id));
+      if (!firstQuestion || !firstQuestion.subject_id) throw new Error('No questions selected or missing subject');
+
+      // Calculate total marks
+      const totalMarks = selectedQuestions.reduce((total, questionId) => 
+        total + (questionMarks[questionId] || 1), 0
+      );
+
       // Create test
       const { data: test, error: testError } = await supabase
-        .from('tests')
+        .from('mcq_tests')
         .insert({
-          name: formData.name,
-          time_limit_minutes: parseInt(formData.timeLimit),
-          created_by: (await supabase.auth.getUser()).data.user?.id
+          title: formData.name,
+          subject_id: firstQuestion.subject_id,
+          duration_minutes: parseInt(formData.timeLimit),
+          total_marks: totalMarks,
+          created_by: user.id
         })
         .select()
         .single();
 
       if (testError) throw testError;
 
-      // Add questions to test with custom marks
+      // Add questions to test
       const testQuestions = selectedQuestions.map((questionId, index) => ({
         test_id: test.id,
         question_id: questionId,
-        points: questionMarks[questionId] || 100,
+        marks_override: questionMarks[questionId] || null,
         order_index: index
       }));
 
       const { error: questionsError } = await supabase
-        .from('test_questions')
+        .from('mcq_test_questions')
         .insert(testQuestions);
 
       if (questionsError) throw questionsError;
 
       // Convert local datetime to UTC properly
-      // The datetime-local input returns a string in local timezone
-      // We need to create a Date object and convert it to UTC
       const startAt = new Date(formData.startAt).toISOString();
       const endAt = new Date(formData.endAt).toISOString();
       
       // Assign test to batch
       const { error: assignmentError } = await supabase
-        .from('test_assignments')
+        .from('mcq_test_assignments')
         .insert({
           test_id: test.id,
           batch_id: formData.batchId,
@@ -270,20 +288,20 @@ export const CreateExamModal = ({ onExamCreated }: CreateExamModalProps) => {
 
       toast({
         title: "Success",
-        description: "Exam created and assigned successfully",
+        description: "MCQ test created and assigned successfully",
       });
 
       setOpen(false);
       setFormData({ name: "", timeLimit: "", batchId: "", startAt: "", endAt: "" });
       setSelectedQuestions([]);
       setQuestionMarks({});
-      onExamCreated();
+      onTestCreated();
 
-    } catch (error) {
-      console.error('Error creating exam:', error);
+    } catch (error: any) {
+      console.error('Error creating MCQ test:', error);
       toast({
         title: "Error",
-        description: "Failed to create exam",
+        description: error.message || "Failed to create test",
         variant: "destructive",
       });
     } finally {
@@ -291,16 +309,17 @@ export const CreateExamModal = ({ onExamCreated }: CreateExamModalProps) => {
     }
   };
 
-  const getDifficultyColor = (difficulty: number) => {
-    if (difficulty <= 2) return "bg-green-100 text-green-800";
-    if (difficulty <= 4) return "bg-yellow-100 text-yellow-800";
-    return "bg-red-100 text-red-800";
-  };
-
-  const getDifficultyLabel = (difficulty: number) => {
-    if (difficulty <= 2) return "Easy";
-    if (difficulty <= 4) return "Medium";
-    return "Hard";
+  const getDifficultyColor = (difficulty: string) => {
+    switch (difficulty) {
+      case 'Easy':
+        return 'bg-green-100 text-green-800';
+      case 'Medium':
+        return 'bg-yellow-100 text-yellow-800';
+      case 'Hard':
+        return 'bg-red-100 text-red-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
   };
 
   return (
@@ -309,19 +328,19 @@ export const CreateExamModal = ({ onExamCreated }: CreateExamModalProps) => {
         <Card className="group hover:shadow-card transition-all duration-300 hover:-translate-y-1 cursor-pointer border-0 bg-card-gradient">
           <CardHeader className="pb-4">
             <div className="flex items-center gap-3">
-              <div className="p-3 rounded-xl bg-gradient-to-br from-primary to-primary-glow shadow-sm">
+              <div className="p-3 rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 shadow-sm">
                 <Plus className="h-6 w-6 text-white" />
               </div>
               <div className="flex-1">
                 <CardTitle className="text-lg font-semibold text-foreground group-hover:text-primary transition-colors">
-                  Create New Exam
+                  Create MCQ Test
                 </CardTitle>
               </div>
             </div>
           </CardHeader>
           <CardContent className="pt-0">
             <p className="text-muted-foreground text-sm">
-              Create and assign new assessments
+              Create and assign MCQ tests
             </p>
           </CardContent>
         </Card>
@@ -331,19 +350,19 @@ export const CreateExamModal = ({ onExamCreated }: CreateExamModalProps) => {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Plus className="h-5 w-5" />
-            Create New Exam
+            Create MCQ Test
           </DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             <div className="space-y-2">
-              <Label htmlFor="name">Exam Name *</Label>
+              <Label htmlFor="name">Test Name *</Label>
               <Input
                 id="name"
                 value={formData.name}
                 onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                placeholder="Enter exam name"
+                placeholder="Enter test name"
                 required
               />
             </div>
@@ -355,7 +374,7 @@ export const CreateExamModal = ({ onExamCreated }: CreateExamModalProps) => {
                 type="number"
                 value={formData.timeLimit}
                 onChange={(e) => setFormData(prev => ({ ...prev, timeLimit: e.target.value }))}
-                placeholder="90"
+                placeholder="60"
                 min="1"
                 required
               />
@@ -414,7 +433,7 @@ export const CreateExamModal = ({ onExamCreated }: CreateExamModalProps) => {
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search by tags, keywords, or title..."
+                  placeholder="Search by tags, keywords, subject, or concept..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-10"
@@ -422,23 +441,22 @@ export const CreateExamModal = ({ onExamCreated }: CreateExamModalProps) => {
               </div>
               
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {availableTags.length > 0 && (
-                  <div className="space-y-2">
-                    <Label className="text-xs text-muted-foreground">Filter by Tags</Label>
-                    <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto">
-                      {availableTags.slice(0, 10).map(tag => (
-                        <Badge
-                          key={tag}
-                          variant={selectedTags.includes(tag) ? "default" : "outline"}
-                          className="cursor-pointer hover:bg-primary/10 text-xs"
-                          onClick={() => handleTagFilter(tag)}
-                        >
-                          {tag}
-                        </Badge>
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">Filter by Subject</Label>
+                  <Select value={selectedSubject} onValueChange={setSelectedSubject}>
+                    <SelectTrigger className="h-9 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Subjects</SelectItem>
+                      {subjects.map(subject => (
+                        <SelectItem key={subject.id} value={subject.id}>
+                          {subject.name}
+                        </SelectItem>
                       ))}
-                    </div>
-                  </div>
-                )}
+                    </SelectContent>
+                  </Select>
+                </div>
 
                 <div className="space-y-2">
                   <Label className="text-xs text-muted-foreground">Filter by Difficulty</Label>
@@ -448,9 +466,9 @@ export const CreateExamModal = ({ onExamCreated }: CreateExamModalProps) => {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Difficulties</SelectItem>
-                      <SelectItem value="easy">Easy</SelectItem>
-                      <SelectItem value="medium">Medium</SelectItem>
-                      <SelectItem value="hard">Hard</SelectItem>
+                      <SelectItem value="Easy">Easy</SelectItem>
+                      <SelectItem value="Medium">Medium</SelectItem>
+                      <SelectItem value="Hard">Hard</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -466,12 +484,14 @@ export const CreateExamModal = ({ onExamCreated }: CreateExamModalProps) => {
                       <SelectItem value="oldest">Oldest First</SelectItem>
                       <SelectItem value="difficulty_asc">Difficulty (Easy → Hard)</SelectItem>
                       <SelectItem value="difficulty_desc">Difficulty (Hard → Easy)</SelectItem>
-                      <SelectItem value="title">Title (A → Z)</SelectItem>
+                      <SelectItem value="marks_asc">Marks (Low → High)</SelectItem>
+                      <SelectItem value="marks_desc">Marks (High → Low)</SelectItem>
+                      <SelectItem value="subject">Subject (A → Z)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
-                {(searchQuery || selectedTags.length > 0 || selectedDifficulty !== "all") && (
+                {(searchQuery || selectedSubject !== "all" || selectedDifficulty !== "all") && (
                   <div className="flex items-end">
                     <Button
                       type="button"
@@ -479,7 +499,7 @@ export const CreateExamModal = ({ onExamCreated }: CreateExamModalProps) => {
                       size="sm"
                       onClick={() => {
                         setSearchQuery("");
-                        setSelectedTags([]);
+                        setSelectedSubject("all");
                         setSelectedDifficulty("all");
                       }}
                       className="w-full"
@@ -496,10 +516,12 @@ export const CreateExamModal = ({ onExamCreated }: CreateExamModalProps) => {
                 <Card className="p-6 text-center">
                   <BookOpen className="h-12 w-12 text-muted-foreground mx-auto mb-2" />
                   <p className="text-muted-foreground">
-                    {questions.length === 0 ? "No questions available" : "No questions match the selected filters"}
+                    {questions.length === 0 ? "No questions available" : "No questions match your filters"}
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    {questions.length === 0 ? "Create questions first to build exams" : "Try selecting different tags or clear filters"}
+                    {questions.length === 0 
+                      ? "Create questions first to build tests" 
+                      : "Try adjusting your search or filters"}
                   </p>
                 </Card>
               ) : (
@@ -517,28 +539,36 @@ export const CreateExamModal = ({ onExamCreated }: CreateExamModalProps) => {
                         className="mt-1"
                       />
                       <div className="flex-1">
-                        <div className="flex items-center justify-between">
-                          <h4 className="font-medium text-foreground">{question.title}</h4>
-                          <div className="flex items-center gap-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-medium text-foreground text-sm line-clamp-2">
+                              {question.question_text}
+                            </h4>
+                            <div className="flex flex-wrap items-center gap-2 mt-2">
+                              {question.subject_name && (
+                                <Badge variant="outline" className="text-xs">
+                                  {question.subject_name}
+                                </Badge>
+                              )}
+                              {question.concept_name && (
+                                <Badge variant="outline" className="text-xs">
+                                  {question.concept_name}
+                                </Badge>
+                              )}
+                              {question.tags && question.tags.length > 0 && (
+                                question.tags.slice(0, 3).map((tag, idx) => (
+                                  <Badge key={idx} variant="secondary" className="text-xs">
+                                    {tag}
+                                  </Badge>
+                                ))
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
                             <Badge className={getDifficultyColor(question.difficulty)}>
-                              {getDifficultyLabel(question.difficulty)}
+                              {question.difficulty}
                             </Badge>
                           </div>
-                        </div>
-                        <div className="space-y-2 mt-2">
-                          <div className="flex gap-1">
-                            {question.supported_languages.slice(0, 3).map((lang) => (
-                              <Badge key={lang} variant="outline" className="text-xs">
-                                {lang}
-                              </Badge>
-                            ))}
-                            {question.supported_languages.length > 3 && (
-                              <Badge variant="outline" className="text-xs">
-                                +{question.supported_languages.length - 3}
-                              </Badge>
-                            )}
-                          </div>
-                          {/* Tags display temporarily disabled until tags column is properly available */}
                         </div>
                         {selectedQuestions.includes(question.id) && (
                           <div className="mt-3 pt-3 border-t border-border">
@@ -551,7 +581,7 @@ export const CreateExamModal = ({ onExamCreated }: CreateExamModalProps) => {
                                 type="number"
                                 min="1"
                                 max="1000"
-                                value={questionMarks[question.id] || 100}
+                                value={questionMarks[question.id] || question.marks}
                                 onChange={(e) => handleMarksChange(question.id, parseInt(e.target.value) || 1)}
                                 className="w-20 h-8"
                               />
@@ -575,7 +605,7 @@ export const CreateExamModal = ({ onExamCreated }: CreateExamModalProps) => {
                     <span className="text-sm font-medium">Total Marks:</span>
                     <span className="text-lg font-bold text-primary">
                       {selectedQuestions.reduce((total, questionId) => 
-                        total + (questionMarks[questionId] || 100), 0
+                        total + (questionMarks[questionId] || 1), 0
                       )} points
                     </span>
                   </div>
@@ -589,7 +619,7 @@ export const CreateExamModal = ({ onExamCreated }: CreateExamModalProps) => {
               Cancel
             </Button>
             <Button type="submit" disabled={loading}>
-              {loading ? "Creating..." : "Create Exam"}
+              {loading ? "Creating..." : "Create Test"}
             </Button>
           </div>
         </form>

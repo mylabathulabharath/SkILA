@@ -17,6 +17,7 @@ interface Exam {
   status: 'upcoming' | 'active' | 'completed';
   start_at?: string;
   end_at?: string;
+  type: 'coding' | 'mcq';
 }
 
 interface ExistingExamsProps {
@@ -37,7 +38,7 @@ export const ExistingExams = ({ refreshTrigger }: ExistingExamsProps) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    // 1. Fetch all tests created by the user
+    // 1. Fetch all coding tests created by the user
     const { data: tests, error: testsError } = await supabase
       .from('tests')
       .select('id, name, time_limit_minutes, created_at')
@@ -46,7 +47,16 @@ export const ExistingExams = ({ refreshTrigger }: ExistingExamsProps) => {
 
     if (testsError) throw testsError;
 
-    // 2. Fetch all assignments for these tests
+    // 2. Fetch all MCQ tests created by the user
+    const { data: mcqTests, error: mcqTestsError } = await (supabase as any)
+      .from('mcq_tests')
+      .select('id, title, duration_minutes, created_at')
+      .eq('created_by', user.id)
+      .order('created_at', { ascending: false });
+
+    if (mcqTestsError) throw mcqTestsError;
+
+    // 3. Fetch all assignments for coding tests
     const testIds = tests?.map(t => t.id) || [];
     let assignments: any[] = [];
     let questions: any[] = [];
@@ -69,8 +79,31 @@ export const ExistingExams = ({ refreshTrigger }: ExistingExamsProps) => {
       questions = questionsData || [];
     }
 
-    // 3. Combine data
-    const formattedExams = tests.map(test => {
+    // 4. Fetch all assignments for MCQ tests
+    const mcqTestIds = (mcqTests || []).map((t: any) => t.id) || [];
+    let mcqAssignments: any[] = [];
+    let mcqQuestions: any[] = [];
+
+    if (mcqTestIds.length > 0) {
+      const { data: mcqAssignmentsData, error: mcqAssignmentsError } = await (supabase as any)
+        .from('mcq_test_assignments')
+        .select('test_id, start_at, end_at, batch_id, batches(name)')
+        .in('test_id', mcqTestIds);
+
+      if (mcqAssignmentsError) throw mcqAssignmentsError;
+      mcqAssignments = mcqAssignmentsData || [];
+
+      const { data: mcqQuestionsData, error: mcqQuestionsError } = await (supabase as any)
+        .from('mcq_test_questions')
+        .select('test_id, question_id')
+        .in('test_id', mcqTestIds);
+
+      if (mcqQuestionsError) throw mcqQuestionsError;
+      mcqQuestions = mcqQuestionsData || [];
+    }
+
+    // 5. Format coding exams
+    const formattedCodingExams = (tests || []).map(test => {
       const assignment = assignments.find(a => a.test_id === test.id);
       const testQuestions = questions.filter(q => q.test_id === test.id);
 
@@ -99,10 +132,50 @@ export const ExistingExams = ({ refreshTrigger }: ExistingExamsProps) => {
         status,
         start_at: assignment?.start_at,
         end_at: assignment?.end_at,
+        type: 'coding' as const,
       };
     });
 
-    setExams(formattedExams);
+    // 6. Format MCQ exams
+    const formattedMcqExams = (mcqTests || []).map((test: any) => {
+      const assignment = mcqAssignments.find((a: any) => a.test_id === test.id);
+      const testQuestions = mcqQuestions.filter((q: any) => q.test_id === test.id);
+
+      const now = new Date();
+      const startAt = assignment?.start_at ? new Date(assignment.start_at) : null;
+      const endAt = assignment?.end_at ? new Date(assignment.end_at) : null;
+
+      let status: 'upcoming' | 'active' | 'completed' = 'upcoming';
+      if (startAt && endAt) {
+        if (now < startAt) {
+          status = 'upcoming';
+        } else if (now >= startAt && now <= endAt) {
+          status = 'active';
+        } else {
+          status = 'completed';
+        }
+      }
+
+      return {
+        id: test.id,
+        name: test.title,
+        time_limit_minutes: test.duration_minutes,
+        created_at: test.created_at,
+        batch_name: assignment?.batches?.name,
+        question_count: testQuestions.length,
+        status,
+        start_at: assignment?.start_at,
+        end_at: assignment?.end_at,
+        type: 'mcq' as const,
+      };
+    });
+
+    // 7. Combine and sort by created_at
+    const allExams = [...formattedCodingExams, ...formattedMcqExams].sort((a, b) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+
+    setExams(allExams);
   } catch (error) {
     console.error('Error fetching exams:', error);
     toast({

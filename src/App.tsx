@@ -12,6 +12,10 @@ import Dashboard from "./pages/Dashboard";
 import TrainerDashboard from "./pages/TrainerDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
 import Exam from "./pages/Exam";
+import McqDashboard from "./pages/McqDashboard";
+import McqSubjectDetail from "./pages/McqSubjectDetail";
+import McqConceptDetail from "./pages/McqConceptDetail";
+import McqTest from "./pages/McqTest";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -62,6 +66,10 @@ const App = () => {
             <Route path="/trainer/*" element={user ? <TrainerDashboard /> : <Index />} />
             <Route path="/admin/*" element={user ? <AdminDashboard /> : <Index />} />
             <Route path="/exam/:examId" element={user ? <Exam /> : <Index />} />
+            <Route path="/mcq" element={user ? <McqDashboard /> : <Index />} />
+            <Route path="/mcq/subject/:subjectId" element={user ? <McqSubjectDetail /> : <Index />} />
+            <Route path="/mcq/concept/:conceptId" element={user ? <McqConceptDetail /> : <Index />} />
+            <Route path="/mcq/test/:testId" element={user ? <McqTest /> : <Index />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

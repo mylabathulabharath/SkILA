@@ -26,9 +26,13 @@ import { useToast } from "@/hooks/use-toast";
 import { CreateExamModal } from "@/components/trainer/CreateExamModal";
 import { CreateQuestionModal } from "@/components/trainer/CreateQuestionModal";
 import { ExcelUploadModal } from "@/components/trainer/ExcelUploadModal";
+import { CreateMcqQuestionModal } from "@/components/trainer/mcq/CreateMcqQuestionModal";
+import { McqExcelUpload } from "@/components/trainer/mcq/McqExcelUpload";
+import { CreateMcqTestModal } from "@/components/trainer/mcq/CreateMcqTestModal";
 import { ExistingExams } from "@/components/trainer/ExistingExams";
 import { BatchManagement } from "@/components/trainer/BatchManagement";
 import ExamResultsView from "@/components/trainer/ExamResultsView";
+import McqResultsView from "@/components/trainer/mcq/McqResultsView";
 
 interface TrainerStats {
   totalStudents: number;
@@ -430,6 +434,9 @@ const TrainerDashboard = () => {
               <CreateExamModal onExamCreated={handleExamCreated} />
               <CreateQuestionModal onQuestionCreated={handleQuestionCreated} />
               <ExcelUploadModal onQuestionsAdded={handleQuestionCreated} />
+              <CreateMcqQuestionModal onQuestionCreated={handleQuestionCreated} />
+              <McqExcelUpload onQuestionsAdded={handleQuestionCreated} />
+              <CreateMcqTestModal onTestCreated={handleExamCreated} />
               
               {/* Secondary Actions */}
               {quickActions.map((action, index) => (
@@ -470,6 +477,7 @@ const TrainerDashboard = () => {
           {/* Exam Results */}
           <div id="exam-results" className="space-y-8">
             <ExamResultsView />
+            <McqResultsView />
           </div>
 
           {/* Recent Activity */}
