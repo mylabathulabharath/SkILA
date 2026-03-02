@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { SocialLoginButtons } from "./SocialLoginButtons";
 
 export const LoginForm = () => {
   const [email, setEmail] = useState("");
@@ -117,6 +118,8 @@ export const LoginForm = () => {
       >
         {isLoading ? "Signing In..." : "Login to SkILA"}
       </Button>
+
+      <SocialLoginButtons />
     </form>
   );
 };

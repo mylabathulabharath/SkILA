@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 import { User, Mail, Lock, Eye, EyeOff, Users, GraduationCap } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { SocialLoginButtons } from "./SocialLoginButtons";
 
 export const RegisterForm = () => {
   const [formData, setFormData] = useState({
@@ -340,6 +341,8 @@ export const RegisterForm = () => {
       >
         {isLoading ? "Creating Account..." : "Join SkILA"}
       </Button>
+
+      <SocialLoginButtons />
 
       <div className="text-center mt-4">
         <button

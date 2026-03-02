@@ -7,11 +7,29 @@ import { Brain, GraduationCap } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { Session } from "@supabase/supabase-js";
+import { useToast } from "@/hooks/use-toast";
 
 export const AuthCard = () => {
   const [activeTab, setActiveTab] = useState("login");
   const [session, setSession] = useState<Session | null>(null);
   const navigate = useNavigate();
+  const { toast } = useToast();
+
+  // Handle OAuth error redirect (e.g. user denied access, provider error)
+  useEffect(() => {
+    const hashParams = new URLSearchParams(window.location.hash.slice(1));
+    const errorCode = hashParams.get("error_code");
+    const errorDesc = hashParams.get("error_description");
+    if (errorCode && errorDesc) {
+      toast({
+        title: "Sign in failed",
+        description: errorDesc.replace(/\+/g, " "),
+        variant: "destructive",
+      });
+      // Clear the hash to prevent toast on refresh
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }, [toast]);
 
   useEffect(() => {
     const navigateByRole = async (userId: string) => {
