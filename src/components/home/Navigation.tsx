@@ -27,7 +27,7 @@ export const Navigation = () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         setUser(user);
-        
+
         if (user) {
           const { data: profile } = await supabase
             .from('profiles')
@@ -77,13 +77,13 @@ export const Navigation = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           {/* Logo */}
-          <div 
+          <div
             className="flex items-center cursor-pointer hover:opacity-80 transition-opacity"
-            onClick={() => navigate("/home")}
+            onClick={() => navigate("/")}
           >
-            <img 
-              src="/SkILA.svg" 
-              alt="SkILA Logo" 
+            <img
+              src="/SkILA.svg"
+              alt="SkILA Logo"
               className="h-10 w-auto"
             />
           </div>
@@ -96,9 +96,8 @@ export const Navigation = () => {
                 <Button
                   key={item.path}
                   variant={isActive(item.path) ? "secondary" : "ghost"}
-                  className={`flex items-center gap-2 ${
-                    isActive(item.path) ? "text-primary font-medium" : ""
-                  }`}
+                  className={`flex items-center gap-2 ${isActive(item.path) ? "text-primary font-medium" : ""
+                    }`}
                   onClick={() => navigate(item.path)}
                 >
                   <Icon className="w-4 h-4" />
@@ -127,7 +126,7 @@ export const Navigation = () => {
                   <Avatar className="h-10 w-10">
                     <AvatarImage src={profile?.avatar_url} alt={profile?.full_name || user.email} />
                     <AvatarFallback className="bg-primary text-white">
-                      {profile?.full_name 
+                      {profile?.full_name
                         ? profile.full_name.split(' ').map(n => n[0]).join('').toUpperCase()
                         : user.email?.charAt(0).toUpperCase() || 'U'
                       }
@@ -143,7 +142,7 @@ export const Navigation = () => {
                   <p className="text-xs text-muted-foreground">{user.email}</p>
                 </div>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem 
+                <DropdownMenuItem
                   className="cursor-pointer"
                   onClick={() => navigate('/dashboard')}
                 >
@@ -155,7 +154,7 @@ export const Navigation = () => {
                   Settings
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem 
+                <DropdownMenuItem
                   className="cursor-pointer text-destructive focus:text-destructive"
                   onClick={handleLogout}
                 >
@@ -166,13 +165,13 @@ export const Navigation = () => {
             </DropdownMenu>
           ) : (
             <div className="flex items-center gap-2">
-              <Button 
-                variant="ghost" 
+              <Button
+                variant="ghost"
                 onClick={() => navigate('/login')}
               >
                 Sign In
               </Button>
-              <Button 
+              <Button
                 variant="auth"
                 onClick={() => navigate('/login')}
               >
@@ -193,9 +192,8 @@ export const Navigation = () => {
                 <Button
                   key={item.path}
                   variant={isActive(item.path) ? "secondary" : "ghost"}
-                  className={`w-full justify-start flex items-center gap-2 ${
-                    isActive(item.path) ? "text-primary font-medium" : ""
-                  }`}
+                  className={`w-full justify-start flex items-center gap-2 ${isActive(item.path) ? "text-primary font-medium" : ""
+                    }`}
                   onClick={() => {
                     navigate(item.path);
                     setMobileMenuOpen(false);
@@ -206,11 +204,11 @@ export const Navigation = () => {
                 </Button>
               );
             })}
-            
+
             {!user && (
               <div className="pt-2 border-t border-border space-y-2">
-                <Button 
-                  variant="ghost" 
+                <Button
+                  variant="ghost"
                   className="w-full justify-start"
                   onClick={() => {
                     navigate('/login');
@@ -219,7 +217,7 @@ export const Navigation = () => {
                 >
                   Sign In
                 </Button>
-                <Button 
+                <Button
                   variant="auth"
                   className="w-full"
                   onClick={() => {

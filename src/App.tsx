@@ -63,10 +63,13 @@ const App = () => {
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Index />} />
             <Route path="/dashboard" element={user ? <Dashboard /> : <Index />} />
+            <Route path="/practice" element={user ? <Dashboard /> : <Index />} />
+            <Route path="/progress" element={user ? <Dashboard /> : <Index />} />
             <Route path="/trainer/*" element={user ? <TrainerDashboard /> : <Index />} />
             <Route path="/admin/*" element={user ? <AdminDashboard /> : <Index />} />
             <Route path="/exam/:examId" element={user ? <Exam /> : <Index />} />
             <Route path="/mcq" element={user ? <McqDashboard /> : <Index />} />
+            <Route path="/mcq/practice" element={user ? <McqDashboard /> : <Index />} />
             <Route path="/mcq/subject/:subjectId" element={user ? <McqSubjectDetail /> : <Index />} />
             <Route path="/mcq/concept/:conceptId" element={user ? <McqConceptDetail /> : <Index />} />
             <Route path="/mcq/test/:testId" element={user ? <McqTest /> : <Index />} />

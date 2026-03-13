@@ -35,7 +35,7 @@ const McqTest = () => {
   const { testId } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  
+
   const [test, setTest] = useState<McqTest | null>(null);
   const [questions, setQuestions] = useState<McqQuestion[]>([]);
   const [attempt, setAttempt] = useState<any>(null);
@@ -108,10 +108,9 @@ const McqTest = () => {
 
         setQuestions(formattedQuestions);
 
-        // Check for existing attempts - check for ANY attempt first
+        // Check for existing attempts
         const { data: { user } } = await supabase.auth.getUser();
-        
-        // Check if user has ANY attempt for this test (any status)
+
         const { data: allAttempts, error: attemptsError } = await supabase
           .from('mcq_attempts')
           .select('*')
@@ -120,16 +119,11 @@ const McqTest = () => {
           .order('created_at', { ascending: false })
           .limit(1);
 
-        if (attemptsError && attemptsError.code !== 'PGRST116') {
-          // PGRST116 is "no rows returned" which is fine
-          throw attemptsError;
-        }
+        if (attemptsError && attemptsError.code !== 'PGRST116') throw attemptsError;
 
-        // If ANY attempt exists, prevent access
         if (allAttempts && allAttempts.length > 0) {
           const existingAttempt = allAttempts[0];
-          
-          // If submitted, show results
+
           if (existingAttempt.status === 'submitted' || existingAttempt.status === 'auto_submitted') {
             setAttempt(existingAttempt);
             setResults({
@@ -140,8 +134,7 @@ const McqTest = () => {
               totalQuestions: formattedQuestions.length,
               unanswered: formattedQuestions.length - (existingAttempt.correct_answers || 0) - (existingAttempt.incorrect_answers || 0)
             });
-            
-            // Load responses for review
+
             const { data: existingResponses } = await supabase
               .from('mcq_responses')
               .select('question_id, selected_option_ids')
@@ -156,9 +149,14 @@ const McqTest = () => {
             setResponses(responseMap);
             setIsSubmitted(true);
           } else {
-            // Active attempt exists - resume it
+            // RESUME ACTIVE ATTEMPT
             setAttempt(existingAttempt);
-            // Load existing responses
+
+            // Set resuming question index
+            if (existingAttempt.last_question_index) {
+              setCurrentQuestionIndex(Math.min(existingAttempt.last_question_index, formattedQuestions.length - 1));
+            }
+
             const { data: existingResponses } = await supabase
               .from('mcq_responses')
               .select('question_id, selected_option_ids')
@@ -171,12 +169,17 @@ const McqTest = () => {
               }
             });
             setResponses(responseMap);
+
+            toast({
+              title: "Test Resumed",
+              description: "Continuing from where you left off.",
+            });
           }
         } else {
           // No attempt exists - create new one
           const now = new Date();
           const endsAt = new Date(now.getTime() + (testData.duration_minutes * 60 * 1000));
-          
+
           const { data: newAttempt, error: attemptError } = await supabase
             .from('mcq_attempts')
             .insert({
@@ -211,7 +214,37 @@ const McqTest = () => {
     loadTest();
   }, [testId, navigate, toast]);
 
-  // Timer
+  // Prevent accidental close/navigation
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (attempt && attempt.status === 'active' && !isSubmitted) {
+        e.preventDefault();
+        e.returnValue = ''; // Standard way to show confirmation dialog
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [attempt, isSubmitted]);
+
+  // Save current question index as student navigates
+  useEffect(() => {
+    if (attempt && attempt.status === 'active' && !isSubmitted) {
+      const saveProgress = async () => {
+        try {
+          await supabase
+            .from('mcq_attempts')
+            .update({ last_question_index: currentQuestionIndex })
+            .eq('id', attempt.id);
+        } catch (error) {
+          console.error('Failed to save progress:', error);
+        }
+      };
+      saveProgress();
+    }
+  }, [currentQuestionIndex]);
+
+  // Timer logic... (keep existing)
   useEffect(() => {
     if (!attempt || isSubmitted) return;
 
@@ -234,53 +267,19 @@ const McqTest = () => {
     return () => clearInterval(interval);
   }, [attempt, isSubmitted]);
 
-  const formatTime = (seconds: number) => {
-    const hrs = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-    
-    if (hrs > 0) {
-      return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-    }
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const handleAnswerChange = (questionId: string, optionId: string) => {
+  const handleAnswerChange = async (questionId: string, optionId: string) => {
     if (isSubmitted) return;
-    
+
+    // Update local state first for responsiveness
     setResponses(prev => ({
       ...prev,
       [questionId]: optionId
     }));
 
-    // Save response to database
+    // Save response to database immediately (Robust sync)
     if (attempt) {
-      supabase
-        .from('mcq_responses')
-        .upsert({
-          attempt_id: attempt.id,
-          question_id: questionId,
-          selected_option_ids: [optionId],
-          time_spent_seconds: 0 // Can be enhanced to track time per question
-        }, {
-          onConflict: 'attempt_id,question_id'
-        })
-        .then(() => {
-          // Response saved
-        });
-    }
-  };
-
-  const handleSubmitTest = async (autoSubmit = false) => {
-    if (!attempt || isSubmitted) return;
-
-    try {
-      setIsSubmitted(true);
-
-      // Save all responses first
-      const responseEntries = Object.entries(responses);
-      for (const [questionId, optionId] of responseEntries) {
-        await supabase
+      try {
+        const { error } = await supabase
           .from('mcq_responses')
           .upsert({
             attempt_id: attempt.id,
@@ -290,9 +289,22 @@ const McqTest = () => {
           }, {
             onConflict: 'attempt_id,question_id'
           });
-      }
 
-      // Calculate scores for each response
+        if (error) throw error;
+      } catch (error) {
+        console.error('Error saving response:', error);
+        // Fallback or retry logic can be added here
+      }
+    }
+  };
+
+  const handleSubmitTest = async (autoSubmit = false) => {
+    if (!attempt || isSubmitted) return;
+
+    try {
+      setIsSubmitted(true);
+
+      // Final calculation of scores
       const { data: allResponses } = await supabase
         .from('mcq_responses')
         .select('*')
@@ -303,33 +315,36 @@ const McqTest = () => {
       let incorrectCount = 0;
 
       for (const response of allResponses || []) {
+        // Find the question in our local State
         const question = questions.find(q => q.id === response.question_id);
         if (!question) continue;
 
-        const selectedOptionId = response.selected_option_ids?.[0];
-        const selectedOption = question.options.find(opt => opt.id === selectedOptionId);
-        
-        if (selectedOption?.is_correct) {
+        const selectedId = response.selected_option_ids?.[0];
+        const correctOption = question.options.find(o => o.is_correct);
+
+        const isCorrect = selectedId === correctOption?.id;
+
+        if (isCorrect) {
           totalScore += question.marks;
           correctCount++;
-        } else if (selectedOptionId) {
+        } else if (selectedId) {
           totalScore -= question.negative_marks;
           incorrectCount++;
         }
 
-        // Update response with correctness and marks
+        // Update response one last time
         await supabase
           .from('mcq_responses')
           .update({
-            is_correct: selectedOption?.is_correct || false,
-            marks_awarded: selectedOption?.is_correct ? question.marks : -question.negative_marks
+            is_correct: isCorrect,
+            marks_awarded: isCorrect ? question.marks : -question.negative_marks
           })
           .eq('id', response.id);
       }
 
-      totalScore = Math.max(0, totalScore); // Ensure non-negative
+      totalScore = Math.max(0, totalScore);
 
-      // Update attempt
+      // Final update of attempt
       const { data: updatedAttempt } = await supabase
         .from('mcq_attempts')
         .update({
@@ -353,28 +368,30 @@ const McqTest = () => {
       });
 
       toast({
-        title: autoSubmit ? "Time's Up!" : "Test Submitted",
-        description: `Your score: ${totalScore}/${attempt.max_score} (${Math.round((totalScore / attempt.max_score) * 100)}%)`,
+        title: autoSubmit ? "Time's Up!" : "Test Completed",
+        description: `Your final score: ${totalScore}/${attempt.max_score}`,
       });
 
-      // Trigger dashboard refresh
-      window.dispatchEvent(new CustomEvent('examSubmitted', { 
-        detail: { 
-          testId: test?.id,
-          score: totalScore,
-          maxScore: attempt.max_score
-        } 
-      }));
-
     } catch (error: any) {
-      console.error('Error submitting test:', error);
+      console.error('Critical error submitting test:', error);
       toast({
-        title: "Error",
-        description: error.message || "Failed to submit test",
+        title: "Submission Error",
+        description: "Your responses are safe, but we couldn't finalize the test. Please check your connection.",
         variant: "destructive",
       });
       setIsSubmitted(false);
     }
+  };
+
+  const formatTime = (seconds: number) => {
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+
+    if (hrs > 0) {
+      return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   const currentQuestion = questions[currentQuestionIndex];
@@ -486,8 +503,8 @@ const McqTest = () => {
                 })}
               </div>
 
-              <Button 
-                className="w-full" 
+              <Button
+                className="w-full"
                 onClick={() => navigate('/mcq')}
               >
                 Back to MCQ Dashboard
@@ -513,7 +530,7 @@ const McqTest = () => {
               </Badge>
             )}
           </div>
-          
+
           <div className="flex items-center gap-4">
             {/* Question Navigation */}
             {!isSubmitted && questions.length > 1 && (
@@ -524,13 +541,12 @@ const McqTest = () => {
                     <button
                       key={q.id}
                       onClick={() => setCurrentQuestionIndex(i)}
-                      className={`w-8 h-8 rounded-md text-sm font-medium transition-colors ${
-                        i === currentQuestionIndex
-                          ? 'bg-primary text-primary-foreground'
-                          : responses[q.id]
+                      className={`w-8 h-8 rounded-md text-sm font-medium transition-colors ${i === currentQuestionIndex
+                        ? 'bg-primary text-primary-foreground'
+                        : responses[q.id]
                           ? 'bg-blue-500 text-white'
                           : 'bg-muted text-muted-foreground hover:bg-muted/80'
-                      }`}
+                        }`}
                     >
                       {i + 1}
                     </button>
@@ -538,14 +554,13 @@ const McqTest = () => {
                 </div>
               </div>
             )}
-            
-            <div className={`flex items-center gap-2 font-mono text-lg font-semibold ${
-              timeLeft <= 300 ? 'text-destructive' : 'text-foreground'
-            }`}>
+
+            <div className={`flex items-center gap-2 font-mono text-lg font-semibold ${timeLeft <= 300 ? 'text-destructive' : 'text-foreground'
+              }`}>
               <Clock className="h-5 w-5" />
               {formatTime(timeLeft)}
             </div>
-            
+
             {!isSubmitted && timeLeft > 0 && (
               <AlertDialog>
                 <AlertDialogTrigger asChild>
@@ -598,8 +613,8 @@ const McqTest = () => {
                 {currentQuestion.options.map((option) => (
                   <div key={option.id} className="flex items-center space-x-2 p-3 rounded-lg border hover:bg-muted/50">
                     <RadioGroupItem value={option.id} id={option.id} />
-                    <Label 
-                      htmlFor={option.id} 
+                    <Label
+                      htmlFor={option.id}
                       className="flex-1 cursor-pointer text-base"
                     >
                       {option.option_text}

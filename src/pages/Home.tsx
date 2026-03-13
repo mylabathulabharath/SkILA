@@ -3,10 +3,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { 
-  Play, 
-  Trophy, 
-  Users, 
+import {
+  Play,
+  Trophy,
+  Users,
   Clock,
   TrendingUp,
   BookOpen,
@@ -168,7 +168,7 @@ const Home = () => {
   return (
     <div className="min-h-screen bg-subtle-gradient">
       <Navigation />
-      
+
       {/* Hero Section */}
       <section className="container mx-auto px-4 sm:px-6 lg:px-8 py-16">
         <div className="text-center max-w-4xl mx-auto">
@@ -179,13 +179,13 @@ const Home = () => {
             Intelligent Learning Assessment
           </h2>
           <p className="text-xl text-muted-foreground mb-12 max-w-2xl mx-auto">
-            Experience the future of coding education with our advanced AI-powered assessment platform. 
+            Experience the future of coding education with our advanced AI-powered assessment platform.
             Get real-time feedback, comprehensive analytics, and personalized learning paths.
           </p>
-          
+
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Button 
-              size="lg" 
+            <Button
+              size="lg"
               className="px-8 py-6 text-lg"
               variant="auth"
               onClick={() => navigate('/login')}
@@ -193,8 +193,8 @@ const Home = () => {
               <Play className="mr-2 h-5 w-5" />
               Start Learning
             </Button>
-            <Button 
-              size="lg" 
+            <Button
+              size="lg"
               variant="authSecondary"
               className="px-8 py-6 text-lg"
               onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })}
@@ -218,7 +218,7 @@ const Home = () => {
               <p className="text-muted-foreground">Active Learners</p>
             </CardContent>
           </Card>
-          
+
           <Card className="text-center bg-card-gradient shadow-card">
             <CardContent className="pt-6">
               <div className="p-3 mx-auto w-fit rounded-xl bg-gradient-to-br from-secondary to-accent mb-4">
@@ -228,7 +228,7 @@ const Home = () => {
               <p className="text-muted-foreground">Assessment Challenges</p>
             </CardContent>
           </Card>
-          
+
           <Card className="text-center bg-card-gradient shadow-card">
             <CardContent className="pt-6">
               <div className="p-3 mx-auto w-fit rounded-xl bg-gradient-to-br from-accent to-secondary mb-4">
@@ -238,7 +238,7 @@ const Home = () => {
               <p className="text-muted-foreground">Assessments Completed</p>
             </CardContent>
           </Card>
-          
+
           <Card className="text-center bg-card-gradient shadow-card">
             <CardContent className="pt-6">
               <div className="p-3 mx-auto w-fit rounded-xl bg-gradient-to-br from-secondary to-primary mb-4">
@@ -259,7 +259,7 @@ const Home = () => {
             Challenge yourself with our curated intelligent learning assessments
           </p>
         </div>
-        
+
         {loading ? (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
             {[...Array(4)].map((_, i) => (
@@ -277,8 +277,8 @@ const Home = () => {
         ) : featuredChallenges.length > 0 ? (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
             {featuredChallenges.map((challenge) => (
-              <Card 
-                key={challenge.id} 
+              <Card
+                key={challenge.id}
                 className="group hover:shadow-card transition-all duration-300 hover:-translate-y-1 cursor-pointer bg-card-gradient"
                 onClick={() => navigate('/login')}
               >
@@ -296,25 +296,25 @@ const Home = () => {
                   <p className="text-sm text-muted-foreground mb-4 line-clamp-2">
                     {challenge.description}
                   </p>
-                  
+
                   <div className="space-y-3">
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">Language:</span>
                       <Badge variant="outline">{challenge.language}</Badge>
                     </div>
-                    
+
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">Attempts:</span>
                       <span className="font-medium text-foreground">{challenge.attempts.toLocaleString()}</span>
                     </div>
-                    
+
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">Success Rate:</span>
                       <span className="font-medium text-foreground">{challenge.successRate}%</span>
                     </div>
                   </div>
-                  
-                  <Button 
+
+                  <Button
                     className="w-full mt-4 group-hover:shadow-glow transition-all"
                     variant="auth"
                     onClick={(e) => {
@@ -351,7 +351,7 @@ const Home = () => {
               See how you stack up against fellow learners
             </p>
           </div>
-          
+
           <Card className="bg-card-gradient shadow-card">
             <CardHeader>
               <CardTitle className="text-xl font-semibold text-foreground flex items-center gap-2">
@@ -364,8 +364,8 @@ const Home = () => {
                 <>
                   <div className="space-y-4">
                     {leaderboard.map((entry) => (
-                      <div 
-                        key={entry.rank} 
+                      <div
+                        key={entry.rank}
                         className="flex items-center justify-between p-4 rounded-lg bg-muted/50 hover:bg-muted/70 transition-colors"
                       >
                         <div className="flex items-center gap-4">
@@ -387,7 +387,7 @@ const Home = () => {
                       </div>
                     ))}
                   </div>
-                  
+
                   <div className="mt-6 text-center">
                     <Button variant="outline" onClick={() => navigate('/login')}>
                       <TrendingUp className="mr-2 h-4 w-4" />
@@ -419,12 +419,12 @@ const Home = () => {
               Ready to Transform Your Learning Journey?
             </h3>
             <p className="text-xl opacity-90 mb-8 max-w-2xl mx-auto">
-              Join thousands of learners who are already advancing their skills 
+              Join thousands of learners who are already advancing their skills
               with SkILA's intelligent learning assessment platform.
             </p>
-            <Button 
-              size="lg" 
-              variant="authSecondary" 
+            <Button
+              size="lg"
+              variant="authSecondary"
               className="px-8 py-6 text-lg"
               onClick={() => navigate('/login')}
             >
@@ -440,9 +440,9 @@ const Home = () => {
           <div className="grid gap-8 md:grid-cols-4">
             <div className="space-y-4">
               <div className="flex items-center">
-                <img 
-                  src="/SkILA.svg" 
-                  alt="SkILA Logo" 
+                <img
+                  src="/SkILA.svg"
+                  alt="SkILA Logo"
                   className="h-10 w-auto"
                 />
               </div>
@@ -450,17 +450,17 @@ const Home = () => {
                 Empowering learners with intelligent assessment technology, real-time feedback, and comprehensive learning analytics.
               </p>
             </div>
-            
+
             <div className="space-y-4">
               <h4 className="font-semibold text-foreground">Platform</h4>
               <ul className="space-y-2 text-sm text-muted-foreground">
-                <li><button onClick={() => navigate('/login')} className="hover:text-primary transition-colors">Get Started</button></li>
-                <li><button onClick={() => navigate('/login')} className="hover:text-primary transition-colors">Learning Assessments</button></li>
-                <li><button onClick={() => navigate('/login')} className="hover:text-primary transition-colors">Take Assessments</button></li>
-                <li><button onClick={() => navigate('/login')} className="hover:text-primary transition-colors">View Progress</button></li>
+                <li><button onClick={() => navigate('/practice')} className="hover:text-primary transition-colors">Get Started</button></li>
+                <li><button onClick={() => navigate('/mcq')} className="hover:text-primary transition-colors">Learning Assessments</button></li>
+                <li><button onClick={() => navigate('/practice')} className="hover:text-primary transition-colors">Take Assessments</button></li>
+                <li><button onClick={() => navigate('/progress')} className="hover:text-primary transition-colors">View Progress</button></li>
               </ul>
             </div>
-            
+
             <div className="space-y-4">
               <h4 className="font-semibold text-foreground">Support</h4>
               <ul className="space-y-2 text-sm text-muted-foreground">
@@ -470,7 +470,7 @@ const Home = () => {
                 <li><button className="hover:text-primary transition-colors">FAQ</button></li>
               </ul>
             </div>
-            
+
             <div className="space-y-4">
               <h4 className="font-semibold text-foreground">Company</h4>
               <ul className="space-y-2 text-sm text-muted-foreground">
@@ -481,7 +481,7 @@ const Home = () => {
               </ul>
             </div>
           </div>
-          
+
           <div className="mt-8 pt-8 border-t border-border text-center text-sm text-muted-foreground">
             <p>&copy; 2024 SkILA - Intelligent Learning Assessment. All rights reserved.</p>
           </div>

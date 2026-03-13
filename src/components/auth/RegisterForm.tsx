@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,7 +16,6 @@ export const RegisterForm = () => {
     email: "",
     password: "",
     confirmPassword: "",
-    batch: "",
   });
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -35,20 +34,10 @@ export const RegisterForm = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
 
-  const batches = [
-    "Computer Science 2024",
-    "Information Technology 2024",
-    "Electrical Engineering 2024",
-    "Mechanical Engineering 2024",
-    "Civil Engineering 2024",
-    "Mathematics 2024",
-    "Physics 2024",
-  ];
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!formData.fullName || !formData.email || !formData.password || !formData.confirmPassword || !formData.batch) {
+
+    if (!formData.fullName || !formData.email || !formData.password || !formData.confirmPassword) {
       toast({
         title: "Validation Error",
         description: "Please fill in all fields",
@@ -76,10 +65,10 @@ export const RegisterForm = () => {
     }
 
     setIsLoading(true);
-    
+
     try {
       const redirectUrl = "https://exam.globaloneservices.com/";
-      
+
       const { error } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
@@ -116,7 +105,7 @@ export const RegisterForm = () => {
 
   const handleTrainerSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!trainerFormData.fullName || !trainerFormData.email || !trainerFormData.password || !trainerFormData.confirmPassword || !trainerFormData.trainerCode) {
       toast({
         title: "Validation Error",
@@ -154,10 +143,10 @@ export const RegisterForm = () => {
     }
 
     setIsTrainerLoading(true);
-    
+
     try {
       const redirectUrl = "https://exam.globaloneservices.com/";
-      
+
       // Sign up the user with trainer flag in metadata
       const { data, error } = await supabase.auth.signUp({
         email: trainerFormData.email,
@@ -310,26 +299,6 @@ export const RegisterForm = () => {
           </div>
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="batch" className="text-sm font-medium text-foreground">
-            Batch/Class
-          </Label>
-          <div className="relative">
-            <Users className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />
-            <Select value={formData.batch} onValueChange={(value) => handleInputChange("batch", value)}>
-              <SelectTrigger className="pl-10 transition-smooth focus:ring-primary/50">
-                <SelectValue placeholder="Select your batch" />
-              </SelectTrigger>
-              <SelectContent>
-                {batches.map((batch) => (
-                  <SelectItem key={batch} value={batch}>
-                    {batch}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
       </div>
 
       <Button
@@ -367,7 +336,7 @@ export const RegisterForm = () => {
               Enter the trainer code to register as a trainer. You'll be able to create questions and tests.
             </DialogDescription>
           </DialogHeader>
-          
+
           <form onSubmit={handleTrainerSubmit} className="space-y-4 mt-4">
             <div className="space-y-4">
               <div className="space-y-2">

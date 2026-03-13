@@ -42,37 +42,47 @@ export const MyProgress = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Fetch user's attempts with scores
-      const { data: attempts, error: attemptsError } = await supabase
+      // 1. Fetch Coding Attempts
+      const { data: codeAttempts, error: codeError } = await supabase
         .from('attempts')
-        .select(`
-          id,
-          score,
-          max_score,
-          submitted_at,
-          test_id,
-          tests(
-            name,
-            time_limit_minutes
-          )
-        `)
+        .select('id, score, max_score, submitted_at, tests(time_limit_minutes)')
         .eq('user_id', user.id)
-        .in('status', ['submitted', 'auto_submitted'])
-        .order('submitted_at', { ascending: true });
+        .in('status', ['submitted', 'auto_submitted']);
 
-      if (attemptsError) throw attemptsError;
+      if (codeError) throw codeError;
+
+      // 2. Fetch MCQ Attempts
+      const { data: mcqAttempts, error: mcqError } = await supabase
+        .from('mcq_attempts')
+        .select('id, score, max_score, submitted_at, test_id, mcq_tests(duration_minutes)')
+        .eq('user_id', user.id)
+        .in('status', ['submitted', 'auto_submitted']);
+
+      if (mcqError) throw mcqError;
+
+      // COMBINE DATA
+      const allAttempts = [
+        ...(codeAttempts || []).map(a => ({
+          ...a,
+          type: 'code',
+          duration: a.tests?.time_limit_minutes || 0
+        })),
+        ...(mcqAttempts || []).map(a => ({
+          ...a,
+          type: 'mcq',
+          duration: (a as any).mcq_tests?.duration_minutes || 0
+        }))
+      ].sort((a, b) => new Date(a.submitted_at!).getTime() - new Date(b.submitted_at!).getTime());
 
       // Calculate stats
-      const totalTests = attempts?.length || 0;
-      const averageScore = attempts && attempts.length > 0 
-        ? Math.round(attempts.reduce((sum, attempt) => sum + (attempt.score / attempt.max_score) * 100, 0) / attempts.length)
+      const totalTests = allAttempts.length;
+      const averageScore = allAttempts.length > 0
+        ? Math.round(allAttempts.reduce((sum, a) => sum + (a.score! / a.max_score!) * 100, 0) / allAttempts.length)
         : 0;
-      const lastScore = attempts && attempts.length > 0 
-        ? Math.round((attempts[attempts.length - 1].score / attempts[attempts.length - 1].max_score) * 100)
+      const lastScore = allAttempts.length > 0
+        ? Math.round((allAttempts[allAttempts.length - 1].score! / allAttempts[allAttempts.length - 1].max_score!) * 100)
         : 0;
-      const timeSaved = attempts && attempts.length > 0
-        ? attempts.reduce((sum, attempt) => sum + (attempt.tests?.time_limit_minutes || 0), 0)
-        : 0;
+      const timeSaved = allAttempts.reduce((sum, a) => sum + (a.duration || 0), 0);
 
       setStats({
         totalTests,
@@ -83,11 +93,11 @@ export const MyProgress = () => {
 
       // Generate progress data by month
       const monthlyData: Record<string, { total: number; count: number }> = {};
-      attempts?.forEach(attempt => {
-        const date = new Date(attempt.submitted_at);
+      allAttempts.forEach(attempt => {
+        const date = new Date(attempt.submitted_at!);
         const month = date.toLocaleDateString('en-US', { month: 'short' });
-        const score = Math.round((attempt.score / attempt.max_score) * 100);
-        
+        const score = Math.round((attempt.score! / attempt.max_score!) * 100);
+
         if (!monthlyData[month]) {
           monthlyData[month] = { total: 0, count: 0 };
         }
@@ -100,46 +110,52 @@ export const MyProgress = () => {
         score: Math.round(data.total / data.count)
       }));
 
-      setProgressData(progressChartData);
+      setProgressData(progressChartData.slice(-6)); // Show last 6 months
 
-      // Generate subject performance data
-      const { data: submissions, error: submissionsError } = await supabase
+      // 3. Subject Performance (Coding + MCQ)
+      const { data: submissions } = await supabase
         .from('submissions')
-        .select(`
-          language,
-          verdict,
-          attempts!inner(
-            user_id
-          )
-        `)
-        .eq('attempts.user_id', user.id)
+        .select('language, verdict')
         .eq('run_type', 'submit');
 
-      if (submissionsError) throw submissionsError;
+      const { data: mcqResponses } = await supabase
+        .from('mcq_responses')
+        .select('is_correct, mcq_questions(mcq_subjects(name))');
 
-      const languageStats: Record<string, { passed: number; total: number }> = {};
-      submissions?.forEach(submission => {
-        if (!languageStats[submission.language]) {
-          languageStats[submission.language] = { passed: 0, total: 0 };
-        }
-        languageStats[submission.language].total += 1;
-        if (submission.verdict === 'passed') {
-          languageStats[submission.language].passed += 1;
-        }
+      const subjectStats: Record<string, { passed: number; total: number }> = {};
+
+      // Add coding languages
+      submissions?.forEach(s => {
+        const lang = s.language.charAt(0).toUpperCase() + s.language.slice(1);
+        if (!subjectStats[lang]) subjectStats[lang] = { passed: 0, total: 0 };
+        subjectStats[lang].total += 1;
+        if (s.verdict === 'passed') subjectStats[lang].passed += 1;
       });
 
-      const subjectChartData = Object.entries(languageStats).map(([language, data]) => ({
-        subject: language.charAt(0).toUpperCase() + language.slice(1),
-        score: Math.round((data.passed / data.total) * 100)
-      }));
+      // Add MCQ subjects
+      mcqResponses?.forEach(r => {
+        const subject = (r.mcq_questions as any)?.mcq_subjects?.name || 'General';
+        if (!subjectStats[subject]) subjectStats[subject] = { passed: 0, total: 0 };
+        subjectStats[subject].total += 1;
+        if (r.is_correct) subjectStats[subject].passed += 1;
+      });
+
+      const subjectChartData = Object.entries(subjectStats)
+        .map(([name, data]) => ({
+          subject: name,
+          score: Math.round((data.passed / data.total) * 100)
+        }))
+        .filter(s => s.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 6);
 
       setSubjectData(subjectChartData);
 
     } catch (error) {
-      console.error('Error fetching progress data:', error);
+      console.error('Error fetching comprehensive progress data:', error);
       toast({
-        title: "Error",
-        description: "Failed to load progress data",
+        title: "Analytics Sync Error",
+        description: "Some data might be missing. Try refreshing.",
         variant: "destructive",
       });
     } finally {
@@ -181,39 +197,37 @@ export const MyProgress = () => {
   if (loading) {
     return (
       <div className="space-y-6">
-        <div>
-          <h2 className="text-2xl font-bold text-foreground mb-2">My Progress</h2>
-          <p className="text-muted-foreground">Track your performance over time</p>
+        <div className="h-10 w-48 bg-muted animate-pulse rounded-lg"></div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="h-24 bg-muted animate-pulse rounded-3xl"></div>
+          ))}
         </div>
-        <Card className="border-0 bg-card-gradient">
-          <CardContent className="p-8 text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-            <p className="text-muted-foreground">Loading progress data...</p>
-          </CardContent>
-        </Card>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-foreground mb-2">My Progress</h2>
-        <p className="text-muted-foreground">Track your performance over time</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-foreground">Personal Insights</h2>
+          <p className="text-sm text-muted-foreground mt-1">Real-time performance metrics</p>
+        </div>
       </div>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {statsConfig.map((stat, index) => (
-          <Card key={index} className="border-0 bg-card-gradient">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className={`p-2 rounded-lg ${stat.bg}`}>
-                  <stat.icon className={`h-4 w-4 ${stat.color}`} />
+          <Card key={index} className="border-0 bg-white/50 backdrop-blur-md shadow-sm hover:translate-y-[-2px] transition-transform rounded-2xl">
+            <CardContent className="p-5">
+              <div className="flex flex-col gap-3">
+                <div className={`w-10 h-10 rounded-xl ${stat.bg} flex items-center justify-center`}>
+                  <stat.icon className={`h-5 w-5 ${stat.color}`} />
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">{stat.label}</p>
-                  <p className="text-lg font-semibold text-foreground">{stat.value}</p>
+                  <p className="text-[10px] uppercase font-black tracking-widest text-slate-400">{stat.label}</p>
+                  <p className="text-2xl font-black text-slate-800">{stat.value}</p>
                 </div>
               </div>
             </CardContent>
@@ -224,42 +238,48 @@ export const MyProgress = () => {
       {/* Charts */}
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Performance Over Time */}
-        <Card className="border-0 bg-card-gradient">
-          <CardHeader>
-            <CardTitle className="text-lg font-semibold text-foreground">
-              Performance Trend
+        <Card className="border border-white/40 bg-white/40 backdrop-blur-md shadow-sm rounded-3xl overflow-hidden">
+          <CardHeader className="pb-0 pt-6 px-6">
+            <CardTitle className="text-lg font-bold text-slate-800 flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-primary" />
+              Growth Trajectory
             </CardTitle>
+            <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest mt-1">Average Score %</p>
           </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={200}>
+          <CardContent className="p-6">
+            <ResponsiveContainer width="100%" height={240}>
               <LineChart data={progressData}>
-                <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                <XAxis 
-                  dataKey="month" 
-                  className="text-xs" 
+                <CartesianGrid strokeDasharray="3 3" vertical={false} className="opacity-10" />
+                <XAxis
+                  dataKey="month"
+                  className="text-[10px] font-bold text-slate-400 uppercase"
                   axisLine={false}
                   tickLine={false}
+                  dy={10}
                 />
-                <YAxis 
-                  className="text-xs" 
+                <YAxis
+                  className="text-[10px] font-bold text-slate-400"
                   axisLine={false}
                   tickLine={false}
+                  domain={[0, 100]}
                 />
-                <Tooltip 
+                <Tooltip
                   contentStyle={{
-                    backgroundColor: 'white',
+                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
                     border: 'none',
-                    borderRadius: '8px',
-                    boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)'
+                    borderRadius: '16px',
+                    boxShadow: '0 20px 50px -10px rgba(0, 0, 0, 0.1)',
+                    padding: '12px'
                   }}
+                  itemStyle={{ fontSize: '12px', fontWeight: 'bold' }}
                 />
-                <Line 
-                  type="monotone" 
-                  dataKey="score" 
-                  stroke="hsl(var(--primary))" 
-                  strokeWidth={3}
-                  dot={{ fill: 'hsl(var(--primary))', strokeWidth: 2, r: 4 }}
-                  activeDot={{ r: 6, fill: 'hsl(var(--secondary))' }}
+                <Line
+                  type="monotone"
+                  dataKey="score"
+                  stroke="hsl(var(--primary))"
+                  strokeWidth={4}
+                  dot={{ fill: 'hsl(var(--primary))', strokeWidth: 2, r: 5, stroke: 'white' }}
+                  activeDot={{ r: 8, fill: 'hsl(var(--secondary))', stroke: 'white', strokeWidth: 2 }}
                 />
               </LineChart>
             </ResponsiveContainer>
@@ -267,39 +287,46 @@ export const MyProgress = () => {
         </Card>
 
         {/* Subject Performance */}
-        <Card className="border-0 bg-card-gradient">
-          <CardHeader>
-            <CardTitle className="text-lg font-semibold text-foreground">
-              Subject Performance
+        <Card className="border border-white/40 bg-white/40 backdrop-blur-md shadow-sm rounded-3xl overflow-hidden">
+          <CardHeader className="pb-0 pt-6 px-6">
+            <CardTitle className="text-lg font-bold text-slate-800 flex items-center gap-2">
+              <Target className="h-4 w-4 text-emerald-500" />
+              Skill Proficiency
             </CardTitle>
+            <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest mt-1">Correct Answers %</p>
           </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={200}>
+          <CardContent className="p-6">
+            <ResponsiveContainer width="100%" height={240}>
               <BarChart data={subjectData}>
-                <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                <XAxis 
-                  dataKey="subject" 
-                  className="text-xs" 
+                <CartesianGrid strokeDasharray="3 3" vertical={false} className="opacity-10" />
+                <XAxis
+                  dataKey="subject"
+                  className="text-[10px] font-bold text-slate-400 uppercase"
                   axisLine={false}
                   tickLine={false}
+                  dy={10}
                 />
-                <YAxis 
-                  className="text-xs" 
+                <YAxis
+                  className="text-[10px] font-bold text-slate-400"
                   axisLine={false}
                   tickLine={false}
+                  domain={[0, 100]}
                 />
-                <Tooltip 
+                <Tooltip
+                  cursor={{ fill: 'rgba(var(--primary), 0.05)' }}
                   contentStyle={{
-                    backgroundColor: 'white',
+                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
                     border: 'none',
-                    borderRadius: '8px',
-                    boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)'
+                    borderRadius: '16px',
+                    boxShadow: '0 20px 50px -10px rgba(0, 0, 0, 0.1)',
+                    padding: '12px'
                   }}
                 />
-                <Bar 
-                  dataKey="score" 
+                <Bar
+                  dataKey="score"
                   fill="url(#colorGradient)"
-                  radius={[4, 4, 0, 0]}
+                  radius={[8, 8, 0, 0]}
+                  barSize={32}
                 />
                 <defs>
                   <linearGradient id="colorGradient" x1="0" y1="0" x2="0" y2="1">

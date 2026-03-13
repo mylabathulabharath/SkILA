@@ -5,40 +5,36 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
   ResponsiveContainer,
   PieChart,
   Pie,
   Cell,
-  LineChart,
-  Line,
-  Area,
-  AreaChart
 } from "recharts";
-import { 
-  Download, 
-  FileText, 
-  BarChart3, 
-  Users, 
-  TrendingUp, 
+import {
+  Download,
+  FileText,
+  BarChart3,
+  Users,
+  TrendingUp,
   Clock,
   CheckCircle,
-  XCircle,
-  AlertCircle,
   Target
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { utils, writeFile } from "xlsx";
 
 interface McqResult {
   id: string;
   test_name: string;
   student_name: string;
+  student_email: string;
   batch_name: string;
   score: number;
   max_score: number;
@@ -139,6 +135,7 @@ const McqResultsView = () => {
           user_id,
           profiles!mcq_attempts_user_id_fkey (
             full_name,
+            email,
             batch_id
           )
         `)
@@ -167,11 +164,12 @@ const McqResultsView = () => {
         const timeDiff = new Date(result.submitted_at).getTime() - new Date(result.started_at).getTime();
         const timeTakenMinutes = Math.round(timeDiff / (1000 * 60));
         const userId = result.user_id;
-        
+
         return {
           id: result.id,
           test_name: (result.mcq_tests as any).title,
           student_name: (result.profiles as any).full_name || 'Unknown',
+          student_email: (result.profiles as any).email || 'No Email',
           batch_name: batchMap.get(userId) || 'No Batch',
           score: result.score || 0,
           max_score: result.max_score || 0,
@@ -243,7 +241,7 @@ const McqResultsView = () => {
     });
 
     const batchResultsArray: BatchResult[] = Array.from(batchMap.entries()).map(([batchName, data]) => {
-      const avgScore = data.scores.length > 0 
+      const avgScore = data.scores.length > 0
         ? Math.round(data.scores.reduce((a, b) => a + b, 0) / data.scores.length)
         : 0;
       const passed = data.scores.filter(s => (s / (results.find(r => r.batch_name === batchName)?.max_score || 1)) * 100 >= 60).length;
@@ -261,7 +259,7 @@ const McqResultsView = () => {
     setBatchResults(batchResultsArray);
   };
 
-  const exportToCSV = () => {
+  const exportToExcel = () => {
     if (results.length === 0) {
       toast({
         title: "No Data",
@@ -271,32 +269,30 @@ const McqResultsView = () => {
       return;
     }
 
-    const headers = ['Student Name', 'Batch', 'Score', 'Max Score', 'Percentage', 'Correct', 'Incorrect', 'Total Questions', 'Status', 'Submitted At'];
-    const rows = results.map(r => [
-      r.student_name,
-      r.batch_name,
-      r.score,
-      r.max_score,
-      `${r.percentage}%`,
-      r.correct_answers,
-      r.incorrect_answers,
-      r.total_questions,
-      r.status,
-      new Date(r.submitted_at).toLocaleString()
-    ]);
+    const exportData = results.map(r => ({
+      'Student Name': r.student_name,
+      'Email': r.student_email,
+      'Batch': r.batch_name,
+      'Score': r.score,
+      'Max Score': r.max_score,
+      'Percentage': `${r.percentage}%`,
+      'Correct': r.correct_answers,
+      'Incorrect': r.incorrect_answers,
+      'Total Questions': r.total_questions,
+      'Status': r.status,
+      'Submitted At': new Date(r.submitted_at).toLocaleString()
+    }));
 
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
-    ].join('\n');
+    const worksheet = utils.json_to_sheet(exportData);
+    const workbook = utils.book_new();
+    utils.book_append_sheet(workbook, worksheet, "Results");
 
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `mcq-results-${selectedTest}-${new Date().toISOString()}.csv`;
-    a.click();
-    window.URL.revokeObjectURL(url);
+    writeFile(workbook, `mcq-results-${selectedTest}-${new Date().getTime()}.xlsx`);
+
+    toast({
+      title: "Success",
+      description: "Excel file downloaded successfully",
+    });
   };
 
   const scoreDistribution = results.reduce((acc, result) => {
@@ -362,9 +358,9 @@ const McqResultsView = () => {
             </SelectContent>
           </Select>
           {results.length > 0 && (
-            <Button onClick={exportToCSV} variant="outline">
+            <Button onClick={exportToExcel} variant="outline">
               <Download className="h-4 w-4 mr-2" />
-              Export CSV
+              Export Excel
             </Button>
           )}
         </div>
@@ -457,6 +453,7 @@ const McqResultsView = () => {
                           <thead>
                             <tr className="border-b">
                               <th className="p-2 text-left font-semibold">Student</th>
+                              <th className="p-2 text-left font-semibold">Email</th>
                               <th className="p-2 text-left font-semibold hidden sm:table-cell">Batch</th>
                               <th className="p-2 text-left font-semibold">Score</th>
                               <th className="p-2 text-left font-semibold">Percentage</th>
@@ -475,6 +472,7 @@ const McqResultsView = () => {
                                     <div className="text-xs text-muted-foreground sm:hidden">{result.batch_name}</div>
                                   </div>
                                 </td>
+                                <td className="p-2 text-sm">{result.student_email}</td>
                                 <td className="p-2 hidden sm:table-cell">{result.batch_name}</td>
                                 <td className="p-2">{result.score}/{result.max_score}</td>
                                 <td className="p-2">

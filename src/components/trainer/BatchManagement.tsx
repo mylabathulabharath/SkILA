@@ -15,6 +15,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 interface Batch {
   id: string;
   name: string;
+  description?: string;
   created_at: string;
   member_count: number;
 }
@@ -179,7 +180,7 @@ const StudentManagementModal = ({ batch, isOpen, onClose, onStudentsUpdated }: S
             Manage Students - {batch.name}
           </DialogTitle>
         </DialogHeader>
-        
+
         <div className="space-y-6">
           {/* Search */}
           <div className="relative">
@@ -204,7 +205,7 @@ const StudentManagementModal = ({ batch, isOpen, onClose, onStudentsUpdated }: S
                   <h3 className="font-semibold text-foreground">Available Students</h3>
                   <Badge variant="secondary">{nonMembers.length}</Badge>
                 </div>
-                
+
                 <ScrollArea className="h-64 border rounded-md p-4">
                   {nonMembers.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground">
@@ -241,7 +242,7 @@ const StudentManagementModal = ({ batch, isOpen, onClose, onStudentsUpdated }: S
                   <h3 className="font-semibold text-foreground">Current Members</h3>
                   <Badge variant="secondary">{members.length}</Badge>
                 </div>
-                
+
                 <ScrollArea className="h-64 border rounded-md p-4">
                   {members.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground">
@@ -277,8 +278,8 @@ const StudentManagementModal = ({ batch, isOpen, onClose, onStudentsUpdated }: S
             <Button variant="outline" onClick={onClose}>
               Cancel
             </Button>
-            <Button 
-              onClick={handleAddStudents} 
+            <Button
+              onClick={handleAddStudents}
               disabled={updating || selectedStudents.length === 0}
               className="flex items-center gap-2"
             >
@@ -306,7 +307,10 @@ export const BatchManagement = () => {
   const [loading, setLoading] = useState(true);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [newBatchName, setNewBatchName] = useState("");
+  const [newBatchDesc, setNewBatchDesc] = useState("");
   const [creating, setCreating] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editingBatch, setEditingBatch] = useState<Batch | null>(null);
   const [selectedBatch, setSelectedBatch] = useState<Batch | null>(null);
   const [studentModalOpen, setStudentModalOpen] = useState(false);
   const { toast } = useToast();
@@ -314,61 +318,59 @@ export const BatchManagement = () => {
   useEffect(() => {
     fetchBatches();
   }, []);
-const fetchBatches = async () => {
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
 
-    // Fetch batches created by the user
-    const { data: batchesData, error: batchesError } = await supabase
-      .from('batches')
-      .select('id, name, created_at')
-      .eq('created_by', user.id)
-      .order('created_at', { ascending: false });
+  const fetchBatches = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
 
-    if (batchesError) throw batchesError;
+      const { data: batchesData, error: batchesError } = await (supabase as any)
+        .from('batches')
+        .select('id, name, description, created_at')
+        .eq('created_by', user.id)
+        .order('created_at', { ascending: false });
 
-    // Fetch all batch_members for these batches
-    const batchIds = batchesData?.map(b => b.id) || [];
-    let memberCounts: Record<string, number> = {};
+      if (batchesError) throw batchesError;
 
-    if (batchIds.length > 0) {
-      const { data: membersData, error: membersError } = await supabase
-        .from('batch_members')
-        .select('batch_id')
-        .in('batch_id', batchIds);
+      const batchIds = batchesData?.map(b => b.id) || [];
+      let memberCounts: Record<string, number> = {};
 
-      if (membersError) throw membersError;
+      if (batchIds.length > 0) {
+        const { data: membersData, error: membersError } = await supabase
+          .from('batch_members')
+          .select('batch_id')
+          .in('batch_id', batchIds);
 
-      // Count members per batch
-      membersData?.forEach((bm) => {
-        memberCounts[bm.batch_id] = (memberCounts[bm.batch_id] || 0) + 1;
+        if (membersError) throw membersError;
+
+        membersData?.forEach((bm) => {
+          memberCounts[bm.batch_id] = (memberCounts[bm.batch_id] || 0) + 1;
+        });
+      }
+
+      const formattedBatches = batchesData?.map((batch) => ({
+        id: batch.id,
+        name: batch.name,
+        description: batch.description,
+        created_at: batch.created_at,
+        member_count: memberCounts[batch.id] || 0,
+      })) || [];
+
+      setBatches(formattedBatches);
+    } catch (error) {
+      console.error('Error fetching batches:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load batches",
+        variant: "destructive",
       });
+    } finally {
+      setLoading(false);
     }
-
-    const formattedBatches = batchesData?.map((batch) => ({
-      id: batch.id,
-      name: batch.name,
-      created_at: batch.created_at,
-      member_count: memberCounts[batch.id] || 0,
-    })) || [];
-
-    setBatches(formattedBatches);
-  } catch (error) {
-    console.error('Error fetching batches:', error);
-    toast({
-      title: "Error",
-      description: "Failed to load batches",
-      variant: "destructive",
-    });
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   const handleCreateBatch = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     if (!newBatchName.trim()) {
       toast({
         title: "Validation Error",
@@ -379,7 +381,6 @@ const fetchBatches = async () => {
     }
 
     setCreating(true);
-
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
@@ -388,6 +389,7 @@ const fetchBatches = async () => {
         .from('batches')
         .insert({
           name: newBatchName.trim(),
+          description: newBatchDesc.trim() || null,
           created_by: user.id
         });
 
@@ -400,8 +402,8 @@ const fetchBatches = async () => {
 
       setCreateModalOpen(false);
       setNewBatchName("");
+      setNewBatchDesc("");
       fetchBatches();
-
     } catch (error) {
       console.error('Error creating batch:', error);
       toast({
@@ -439,6 +441,42 @@ const fetchBatches = async () => {
     }
   };
 
+  const handleUpdateBatch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingBatch || !editingBatch.name.trim()) return;
+
+    setCreating(true);
+    try {
+      const { error } = await supabase
+        .from('batches')
+        .update({
+          name: editingBatch.name.trim(),
+          description: editingBatch.description?.trim() || null
+        })
+        .eq('id', editingBatch.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "Success",
+        description: "Batch updated successfully",
+      });
+
+      setEditModalOpen(false);
+      setEditingBatch(null);
+      fetchBatches();
+    } catch (error) {
+      console.error('Error updating batch:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update batch",
+        variant: "destructive",
+      });
+    } finally {
+      setCreating(false);
+    }
+  };
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
       month: 'short',
@@ -467,150 +505,188 @@ const fetchBatches = async () => {
 
   return (
     <Card className="bg-card-gradient shadow-card">
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-xl font-semibold text-foreground flex items-center gap-2">
-            <Users className="h-5 w-5" />
-            Batch Management
-          </CardTitle>
-          
-          <Dialog open={createModalOpen} onOpenChange={setCreateModalOpen}>
-            <DialogTrigger asChild>
-              <Button className="flex items-center gap-2">
-                <Plus className="h-4 w-4" />
-                Create Batch
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Create New Batch</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleCreateBatch} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="batchName">Batch Name</Label>
-                  <Input
-                    id="batchName"
-                    value={newBatchName}
-                    onChange={(e) => setNewBatchName(e.target.value)}
-                    placeholder="Enter batch name"
-                    required
-                  />
-                </div>
-                <div className="flex justify-end gap-3">
-                  <Button type="button" variant="outline" onClick={() => setCreateModalOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button type="submit" disabled={creating}>
-                    {creating ? "Creating..." : "Create Batch"}
-                  </Button>
-                </div>
-              </form>
-            </DialogContent>
-          </Dialog>
-        </div>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <CardTitle className="text-xl font-semibold text-foreground flex items-center gap-2">
+          <Users className="h-5 w-5" />
+          Batch Management
+        </CardTitle>
+        <Dialog open={createModalOpen} onOpenChange={setCreateModalOpen}>
+          <DialogTrigger asChild>
+            <Button className="font-bold flex items-center gap-2">
+              <Plus className="h-4 w-4" />
+              Create Batch
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Create New Batch</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleCreateBatch} className="space-y-4 pt-4">
+              <div className="space-y-2">
+                <Label htmlFor="name">Batch Name</Label>
+                <Input
+                  id="name"
+                  placeholder="e.g. MERN Stack 2024"
+                  value={newBatchName}
+                  onChange={(e) => setNewBatchName(e.target.value)}
+                  autoFocus
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="description">Description (Optional)</Label>
+                <Input
+                  id="description"
+                  placeholder="e.g. Morning Batch"
+                  value={newBatchDesc}
+                  onChange={(e) => setNewBatchDesc(e.target.value)}
+                />
+              </div>
+              <div className="flex justify-end gap-3 pt-4">
+                <Button type="button" variant="outline" onClick={() => setCreateModalOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={creating}>
+                  {creating ? "Creating..." : "Create Batch"}
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
       </CardHeader>
       <CardContent>
         {batches.length === 0 ? (
-          <div className="text-center py-8">
-            <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-foreground mb-2">No Batches Yet</h3>
-            <p className="text-muted-foreground mb-4">Create your first batch to organize students</p>
-            <Button onClick={() => setCreateModalOpen(true)} className="flex items-center gap-2">
-              <Plus className="h-4 w-4" />
-              Create First Batch
-            </Button>
+          <div className="text-center py-12 bg-muted/20 rounded-2xl border-2 border-dashed border-border/60">
+            <Users className="h-12 w-12 text-muted-foreground/40 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-foreground mb-2">No batches yet</h3>
+            <p className="text-muted-foreground max-w-sm mx-auto">
+              Create your first batch to start managing students and assigning exams.
+            </p>
           </div>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {batches.map((batch) => (
-              <Card key={batch.id} className="border border-border hover:shadow-sm transition-shadow">
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex-1 min-w-0">
-                      <h4 className="font-semibold text-foreground mb-1 truncate">{batch.name}</h4>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <UserPlus className="h-4 w-4 flex-shrink-0" />
-                        <span>{batch.member_count} students</span>
-                      </div>
+              <Card key={batch.id} className="border border-border/50 bg-white/60 hover:shadow-lg transition-all duration-300">
+                <CardContent className="p-6">
+                  <div className="flex items-start justify-between mb-4">
+                    <div>
+                      <h3 className="text-lg font-bold text-foreground mb-1">{batch.name}</h3>
+                      <p className="text-xs text-muted-foreground">Created {formatDate(batch.created_at)}</p>
+                      {batch.description && (
+                        <p className="text-sm text-muted-foreground mt-2 italic">{batch.description}</p>
+                      )}
                     </div>
-                    
-                    <div className="flex gap-1 ml-2">
-                      <Button 
-                        size="sm" 
-                        variant="outline"
-                        onClick={() => {
-                          // TODO: Implement edit functionality
-                          toast({
-                            title: "Coming Soon",
-                            description: "Edit functionality will be available soon",
-                          });
-                        }}
-                      >
-                        <Edit className="h-3 w-3" />
-                      </Button>
-                      
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button size="sm" variant="outline" className="text-destructive hover:text-destructive">
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Delete Batch</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Are you sure you want to delete "{batch.name}"? This action cannot be undone.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction 
-                              onClick={() => handleDeleteBatch(batch.id)}
-                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                            >
-                              Delete
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Badge variant="outline" className="text-xs">
-                      Created {formatDate(batch.created_at)}
+                    <Badge variant="secondary" className="bg-primary/10 text-primary border-none">
+                      {batch.member_count} Students
                     </Badge>
-                    
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
-                      className="w-full"
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 mt-6">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 font-bold text-xs"
                       onClick={() => {
                         setSelectedBatch(batch);
                         setStudentModalOpen(true);
                       }}
                     >
-                      Manage Students
+                      <UserPlus className="h-4 w-4 mr-2" />
+                      Students
                     </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="font-bold text-xs"
+                      onClick={() => {
+                        setEditingBatch(batch);
+                        setEditModalOpen(true);
+                      }}
+                    >
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="font-bold text-xs text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This will permanently delete the batch "{batch.name}" and remove all student associations.
+                            This action cannot be undone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => handleDeleteBatch(batch.id)}
+                            className="bg-destructive hover:bg-destructive/90"
+                          >
+                            Delete Batch
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </div>
                 </CardContent>
               </Card>
             ))}
           </div>
         )}
-      </CardContent>
 
-      {selectedBatch && (
-        <StudentManagementModal
-          batch={selectedBatch}
-          isOpen={studentModalOpen}
-          onClose={() => setStudentModalOpen(false)}
-          onStudentsUpdated={() => {
-            setSelectedBatch(null);
-            fetchBatches();
-          }}
-        />
-      )}
+        {/* Edit Batch Dialog */}
+        <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Edit Batch</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleUpdateBatch} className="space-y-4 pt-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-name">Batch Name</Label>
+                <Input
+                  id="edit-name"
+                  value={editingBatch?.name || ""}
+                  onChange={(e) => setEditingBatch(prev => prev ? { ...prev, name: e.target.value } : null)}
+                  autoFocus
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-description">Description</Label>
+                <Input
+                  id="edit-description"
+                  value={editingBatch?.description || ""}
+                  onChange={(e) => setEditingBatch(prev => prev ? { ...prev, description: e.target.value } : null)}
+                />
+              </div>
+              <div className="flex justify-end gap-3 pt-4">
+                <Button type="button" variant="outline" onClick={() => setEditModalOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={creating}>
+                  {creating ? "Updating..." : "Update Batch"}
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        {selectedBatch && (
+          <StudentManagementModal
+            batch={selectedBatch}
+            isOpen={studentModalOpen}
+            onClose={() => {
+              setStudentModalOpen(false);
+              setSelectedBatch(null);
+            }}
+            onStudentsUpdated={fetchBatches}
+          />
+        )}
+      </CardContent>
     </Card>
   );
 };
