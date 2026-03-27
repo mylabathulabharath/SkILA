@@ -1,6 +1,6 @@
 // Judge0 API Integration - Optimized with multiple endpoints and caching
 const JUDGE0_ENDPOINTS = [
-  "http://34.14.221.217:2358", // Primary endpoint
+  "http://35.200.198.142:2358", // Primary endpoint
   "http://34.93.252.188:2358", // Fallback endpoint
 ];
 
@@ -94,7 +94,7 @@ export class Judge0Service {
   private static async makeRequest(endpoint: string, options: RequestInit = {}, retryCount = 0): Promise<any> {
     const maxRetries = 2;
     const currentEndpoint = this.getCurrentEndpoint();
-    
+
     try {
       // Create abort controller for this request
       const abortController = new AbortController();
@@ -185,7 +185,7 @@ export class Judge0Service {
     // Process test cases in parallel for better performance
     const promises = testCases.map(async (testCase, index) => {
       const cacheKey = this.generateCacheKey(code, language, testCase.input);
-      
+
       // Check cache first
       const cachedResult = this.getCachedResult(cacheKey);
       if (cachedResult) {
@@ -255,10 +255,10 @@ export class Judge0Service {
       await new Promise(resolve => setTimeout(resolve, delay));
       result = await this.getSubmissionResult(token);
       attempts++;
-      
+
       // Exponential backoff: 200ms, 400ms, 800ms, 1600ms, then 2000ms max
       delay = Math.min(delay * 1.5, 2000);
-      
+
       // Log progress for long-running submissions
       if (attempts % 10 === 0) {
         console.log(`Test case ${testCaseIndex + 1} still processing... (attempt ${attempts})`);
@@ -319,10 +319,10 @@ export class Judge0Service {
       controller.abort();
     });
     connectionPool.clear();
-    
+
     // Clear cache
     codeCache.clear();
-    
+
     console.log('Judge0 service cleaned up');
   }
 
@@ -354,7 +354,7 @@ export class Judge0Service {
 
     const results = await Promise.all(healthChecks);
     const healthyEndpoints = results.filter(r => r.status === 'healthy');
-    const recommendedEndpoint = healthyEndpoints.length > 0 
+    const recommendedEndpoint = healthyEndpoints.length > 0
       ? healthyEndpoints.sort((a, b) => a.responseTime - b.responseTime)[0].url
       : JUDGE0_ENDPOINTS[0];
 
@@ -385,7 +385,7 @@ export class MockJudge0Service {
     return testCases.map((testCase, index) => {
       // Mock some passing and some failing results for demo
       const passed = index < Math.ceil(testCases.length * 0.7); // 70% pass rate
-      
+
       return {
         input: testCase.input,
         expectedOutput: testCase.output,

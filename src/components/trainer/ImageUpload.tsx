@@ -13,9 +13,9 @@ interface ImageUploadProps {
   accept?: string;
 }
 
-export const ImageUpload = ({ 
-  onImageUploaded, 
-  currentImageUrl, 
+export const ImageUpload = ({
+  onImageUploaded,
+  currentImageUrl,
   label = "Upload Image",
   accept = "image/*"
 }: ImageUploadProps) => {
@@ -74,47 +74,44 @@ export const ImageUpload = ({
         .upload(filePath, file);
 
       if (error) {
-        // If bucket doesn't exist, create it
-        if (error.message.includes('not found')) {
-          await createStorageBucket();
-          // Retry upload
-          const { data: retryData, error: retryError } = await supabase.storage
-            .from('question-images')
-            .upload(filePath, file);
-          
-          if (retryError) throw retryError;
-          
-          const publicUrl = supabase.storage
-            .from('question-images')
-            .getPublicUrl(filePath).data.publicUrl;
-          
-          onImageUploaded(publicUrl);
-          return;
+        // More robust check for missing bucket
+        if (error.message.toLowerCase().includes('not found') || (error as any).status === 404) {
+          try {
+            await createStorageBucket();
+            // Retry upload once
+            const { error: retryError } = await supabase.storage
+              .from('question-images')
+              .upload(filePath, file);
+
+            if (retryError) throw retryError;
+
+            const publicUrl = supabase.storage
+              .from('question-images')
+              .getPublicUrl(filePath).data.publicUrl;
+
+            onImageUploaded(publicUrl);
+            toast({
+              title: "Success",
+              description: "Bucket created and image uploaded.",
+            });
+            return;
+          } catch (bucketErr: any) {
+            console.error('Bucket creation/retry failed:', bucketErr);
+            throw new Error(`Storage bucket 'question-images' is missing and could not be created: ${bucketErr.message}`);
+          }
         }
         throw error;
       }
-
-      // Get public URL
-      const { data: urlData } = supabase.storage
-        .from('question-images')
-        .getPublicUrl(filePath);
-
-      onImageUploaded(urlData.publicUrl);
-
-      toast({
-        title: "Image uploaded successfully",
-        description: "Image has been uploaded and is ready to use",
-      });
-
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error uploading image:', error);
       toast({
         title: "Upload failed",
-        description: "Failed to upload image. Please try again.",
+        description: error.message || "Failed to upload image. Please ensure storage buckets are configured.",
         variant: "destructive",
       });
       setPreview(null);
     } finally {
+
       setUploading(false);
     }
   };
@@ -147,7 +144,7 @@ export const ImageUpload = ({
   return (
     <div className="space-y-3">
       <Label>{label}</Label>
-      
+
       {preview ? (
         <div className="space-y-3">
           <div className="relative w-full h-48 border-2 border-dashed border-gray-300 rounded-lg overflow-hidden">

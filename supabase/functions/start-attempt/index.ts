@@ -9,108 +9,185 @@ const corsHeaders = {
 
 serve(async (req) => {
   console.log('start-attempt function called');
-  
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    console.log('Creating Supabase client');
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    console.log('Getting auth header');
     const authHeader = req.headers.get('Authorization');
-    
+
     if (!authHeader) {
-      console.log('No auth header found');
       return new Response(
-        JSON.stringify({ 
-          success: false, 
+        JSON.stringify({
+          success: false,
           error_code: 'NO_AUTH_HEADER',
-          message: 'No authorization header provided' 
+          message: 'No authorization header provided'
         }),
-        { 
-          status: 401, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        }
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log('Authenticating user');
     const { data: { user }, error: authError } = await supabaseClient.auth.getUser(authHeader.replace('Bearer ', ''));
-    
+
     if (authError || !user) {
-      console.log('Auth error:', authError);
       return new Response(
-        JSON.stringify({ 
-          success: false, 
+        JSON.stringify({
+          success: false,
           error_code: 'UNAUTHORIZED',
-          message: 'User not authenticated' 
+          message: 'User not authenticated'
         }),
-        { 
-          status: 401, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        }
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     console.log('User authenticated:', user.id);
 
-    console.log('Parsing request body');
     const body = await req.json();
-    console.log('Request body:', body);
-    
     const { test_id } = body;
 
     if (!test_id) {
-      console.log('Missing test_id');
       return new Response(
-        JSON.stringify({ 
-          success: false, 
+        JSON.stringify({
+          success: false,
           error_code: 'MISSING_TEST_ID',
-          message: 'Test ID is required' 
+          message: 'Test ID is required'
         }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        }
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log('Processing test_id:', test_id);
-
-    // Get test details to get the actual duration
-    console.log('Fetching test details');
+    // ─────────────────────────────────────────────
+    // 1. Fetch the test to verify it exists + get duration
+    // ─────────────────────────────────────────────
     const { data: test, error: testError } = await supabaseClient
       .from('tests')
-      .select('time_limit_minutes')
+      .select('id, time_limit_minutes, name')
       .eq('id', test_id)
       .single();
 
-    if (testError) {
-      console.error('Error fetching test:', testError);
+    if (testError || !test) {
       return new Response(
-        JSON.stringify({ 
-          success: false, 
+        JSON.stringify({
+          success: false,
           error_code: 'TEST_NOT_FOUND',
-          message: 'Test not found: ' + testError.message
+          message: 'Test not found'
         }),
-        { 
-          status: 404, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        }
+        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log('Test found, duration:', test.time_limit_minutes, 'minutes');
+    console.log('Test found:', test.name, '| Duration:', test.time_limit_minutes, 'min');
 
-    // Create attempt with correct duration
-    console.log('Creating new attempt');
+    // ─────────────────────────────────────────────
+    // 2. Check ALL existing attempts for this user+test (any status)
+    // ─────────────────────────────────────────────
+    const { data: allAttempts, error: attemptsError } = await supabaseClient
+      .from('attempts')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('test_id', test_id)
+      .order('started_at', { ascending: false });
+
+    if (attemptsError) {
+      console.error('Error fetching attempts:', attemptsError);
+    }
+
+    const attempts = allAttempts || [];
+    const activeAttempt = attempts.find(a => a.status === 'active');
+    const submittedAttempts = attempts.filter(a => a.status === 'submitted' || a.status === 'auto_submitted');
+
+    console.log(`Found ${attempts.length} total attempts, ${activeAttempt ? 1 : 0} active, ${submittedAttempts.length} submitted`);
+
+    // ─────────────────────────────────────────────
+    // 3. CASE A: There IS an active attempt → resume or expire it
+    // ─────────────────────────────────────────────
+    if (activeAttempt) {
+      const now = new Date();
+      const endsAt = new Date(activeAttempt.ends_at);
+
+      if (now > endsAt) {
+        // Attempt has expired but is still marked active → auto-submit it
+        console.log('Active attempt is expired. Auto-submitting:', activeAttempt.id);
+        await supabaseClient
+          .from('attempts')
+          .update({
+            status: 'auto_submitted',
+            submitted_at: endsAt.toISOString(),
+            score: activeAttempt.score || 0,
+            max_score: activeAttempt.max_score || 0
+          })
+          .eq('id', activeAttempt.id);
+
+        // After auto-submitting, fall through to create a new attempt or block
+        // Actually, if the test window has closed, we should NOT create a new one.
+        // We return a clear message.
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error_code: 'ATTEMPT_EXPIRED',
+            message: 'Your previous attempt has expired and been auto-submitted.',
+            data: {
+              attempt_id: activeAttempt.id,
+              status: 'auto_submitted',
+              was_expired: true
+            }
+          }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      } else {
+        // Attempt is still live → RESUME it
+        const remainingMs = endsAt.getTime() - now.getTime();
+        const remainingMinutes = Math.floor(remainingMs / 60000);
+        const remainingSec = Math.floor((remainingMs % 60000) / 1000);
+
+        console.log(`Resuming active attempt: ${activeAttempt.id} | Time left: ${remainingMinutes}m ${remainingSec}s`);
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            resumed: true,
+            message: `Welcome back! Resuming your exam. Time remaining: ${remainingMinutes}m ${remainingSec}s`,
+            data: activeAttempt
+          }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // 4. CASE B: No active attempt, but already submitted → tell user
+    // ─────────────────────────────────────────────
+    if (submittedAttempts.length > 0) {
+      const latest = submittedAttempts[0]; // most recent submitted
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error_code: 'ALREADY_SUBMITTED',
+          message: 'You have already completed this exam.',
+          data: {
+            attempt_id: latest.id,
+            status: latest.status,
+            score: latest.score,
+            max_score: latest.max_score,
+            submitted_at: latest.submitted_at
+          }
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // ─────────────────────────────────────────────
+    // 5. CASE C: No attempts at all → create a fresh one
+    // ─────────────────────────────────────────────
+    console.log('No existing attempts. Creating fresh attempt.');
     const now = new Date();
-    const durationMs = (test.time_limit_minutes || 60) * 60 * 1000; // Use test duration or default to 60 minutes
+    const durationMs = (test.time_limit_minutes || 60) * 60 * 1000;
     const endsAt = new Date(now.getTime() + durationMs);
 
     const { data: newAttempt, error: attemptError } = await supabaseClient
@@ -129,51 +206,63 @@ serve(async (req) => {
 
     if (attemptError) {
       console.error('Error creating attempt:', attemptError);
-      return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error_code: 'ATTEMPT_CREATION_FAILED',
-          message: 'Failed to create attempt: ' + attemptError.message
-        }),
-        { 
-          status: 500, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+
+      // Handle race condition: unique constraint violation
+      if (attemptError.code === '23505') {
+        // Another request created the attempt between our check and insert
+        const { data: retryAttempt } = await supabaseClient
+          .from('attempts')
+          .select()
+          .eq('user_id', user.id)
+          .eq('test_id', test_id)
+          .eq('status', 'active')
+          .maybeSingle();
+
+        if (retryAttempt) {
+          return new Response(
+            JSON.stringify({
+              success: true,
+              resumed: true,
+              message: 'Session recovered. Resuming your exam.',
+              data: retryAttempt
+            }),
+            { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
         }
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error_code: 'ATTEMPT_CREATION_FAILED',
+          message: 'Failed to start exam session. Please try again.'
+        }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log('Attempt created successfully:', newAttempt);
+    console.log('Fresh attempt created:', newAttempt.id);
 
     return new Response(
-      JSON.stringify({ 
-        success: true, 
+      JSON.stringify({
+        success: true,
+        resumed: false,
+        message: 'Exam session started successfully.',
         data: newAttempt
       }),
-      { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      }
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
   } catch (error) {
     console.error('Error in start-attempt:', error);
-    console.error('Error stack:', error.stack);
-    console.error('Error details:', {
-      message: error.message,
-      name: error.name,
-      cause: error.cause
-    });
-    
     return new Response(
-      JSON.stringify({ 
-        success: false, 
+      JSON.stringify({
+        success: false,
         error_code: 'INTERNAL_ERROR',
-        message: 'Internal server error: ' + error.message,
-        details: error.stack
+        message: 'An unexpected error occurred. Please try again.',
+        details: error.message
       }),
-      { 
-        status: 500, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      }
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 });

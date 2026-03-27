@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ExamHeader } from "@/components/exam/ExamHeader";
 import { QuestionPanel } from "@/components/exam/QuestionPanel";
@@ -6,8 +6,12 @@ import { CodeEditor } from "@/components/exam/CodeEditor";
 import { PerformanceMonitor } from "@/components/exam/PerformanceMonitor";
 import { Judge0Service } from "@/services/judge0";
 import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+import { AlertCircle, RefreshCcw, Shield, Wifi, WifiOff, Clock, CheckCircle2, XCircle, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 
-const DEFAULT_CODE_TEMPLATES = {
+const DEFAULT_CODE_TEMPLATES: Record<string, string> = {
   cpp: `#include <iostream>
 #include <vector>
 #include <string>
@@ -41,142 +45,380 @@ if __name__ == "__main__":
 
 solution();`
 };
-import { useToast } from "@/hooks/use-toast";
-import { useCallback } from "react";
 
-// Mock data - in a real app, this would come from Supabase
-const mockQuestion = {
-  id: "1",
-  title: "Two Sum",
-  difficulty: "Easy" as const,
-  description: `Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Session Recovery Screen
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+interface SessionRecoveryProps {
+  error: string;
+  errorCode: string;
+  retryCount: number;
+  maxRetries: number;
+  onRetry: () => void;
+  onGoBack: () => void;
+  isRetrying: boolean;
+  examTitle?: string;
+  attemptData?: any;
+}
 
-You may assume that each input would have exactly one solution, and you may not use the same element twice.
+const SessionRecoveryScreen = ({
+  error,
+  errorCode,
+  retryCount,
+  maxRetries,
+  onRetry,
+  onGoBack,
+  isRetrying,
+  examTitle,
+  attemptData,
+}: SessionRecoveryProps) => {
+  const canRetry = retryCount < maxRetries;
+  const isAlreadySubmitted = errorCode === 'ALREADY_SUBMITTED';
+  const isExpired = errorCode === 'ATTEMPT_EXPIRED';
 
-You can return the answer in any order.`,
-  constraints: [
-    "2 <= nums.length <= 10^4",
-    "-10^9 <= nums[i] <= 10^9",
-    "-10^9 <= target <= 10^9",
-    "Only one valid answer exists."
-  ],
-  testCases: [
-    {
-      input: "nums = [2,7,11,15], target = 9",
-      output: "[0,1]",
-      explanation: "Because nums[0] + nums[1] == 9, we return [0, 1]."
-    },
-    {
-      input: "nums = [3,2,4], target = 6",
-      output: "[1,2]",
-      explanation: "Because nums[1] + nums[2] == 6, we return [1, 2]."
-    },
-    {
-      input: "nums = [3,3], target = 6",
-      output: "[0,1]",
-      explanation: "Because nums[0] + nums[1] == 6, we return [0, 1]."
-    }
-  ]
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center p-6">
+      <div className="max-w-lg w-full space-y-8">
+        {/* Status Card */}
+        <div className="text-center space-y-6">
+          {/* Icon */}
+          <div className={`mx-auto w-20 h-20 rounded-3xl flex items-center justify-center shadow-xl ${isAlreadySubmitted
+            ? 'bg-emerald-500/10 border-2 border-emerald-500/20'
+            : isExpired
+              ? 'bg-amber-500/10 border-2 border-amber-500/20'
+              : 'bg-red-500/10 border-2 border-red-500/20'
+            }`}>
+            {isAlreadySubmitted ? (
+              <CheckCircle2 className="h-10 w-10 text-emerald-500" />
+            ) : isExpired ? (
+              <Clock className="h-10 w-10 text-amber-500" />
+            ) : (
+              <WifiOff className="h-10 w-10 text-red-500" />
+            )}
+          </div>
+
+          {/* Title */}
+          <div className="space-y-2">
+            <h1 className="text-3xl font-black tracking-tight">
+              {isAlreadySubmitted
+                ? 'Exam Already Submitted'
+                : isExpired
+                  ? 'Session Expired'
+                  : 'Connection Issue'}
+            </h1>
+            {examTitle && (
+              <p className="text-muted-foreground text-sm font-medium">{examTitle}</p>
+            )}
+          </div>
+
+          {/* Message */}
+          <p className="text-muted-foreground leading-relaxed max-w-md mx-auto">
+            {isAlreadySubmitted ? (
+              <>You have already completed this exam.
+                {attemptData?.score !== undefined && (
+                  <span className="block mt-2 text-lg font-bold text-foreground">
+                    Score: {attemptData.score}/{attemptData.max_score}
+                    <span className="ml-2 text-sm text-muted-foreground">
+                      ({attemptData.max_score > 0 ? Math.round((attemptData.score / attemptData.max_score) * 100) : 0}%)
+                    </span>
+                  </span>
+                )}
+              </>
+            ) : isExpired ? (
+              <>Your exam session has timed out and has been automatically submitted. The timer continued even while you were away.</>
+            ) : (
+              <>{error || 'Unable to connect to the exam server. This could be due to a network issue or server maintenance.'}</>
+            )}
+          </p>
+
+          {/* Retry Progress */}
+          {!isAlreadySubmitted && !isExpired && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-center gap-2">
+                {Array.from({ length: maxRetries }).map((_, i) => (
+                  <div
+                    key={i}
+                    className={`h-2 w-8 rounded-full transition-all duration-500 ${i < retryCount
+                      ? 'bg-red-400'
+                      : i === retryCount
+                        ? 'bg-amber-400 animate-pulse'
+                        : 'bg-muted'
+                      }`}
+                  />
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground/60 font-bold uppercase tracking-widest">
+                Attempt {retryCount + 1} of {maxRetries}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="flex flex-col gap-3">
+          {canRetry && !isAlreadySubmitted && !isExpired && (
+            <Button
+              onClick={onRetry}
+              disabled={isRetrying}
+              className="w-full h-14 rounded-2xl font-bold text-sm uppercase tracking-widest bg-primary hover:bg-primary/90 shadow-xl shadow-primary/20"
+            >
+              {isRetrying ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Reconnecting...
+                </>
+              ) : (
+                <>
+                  <RefreshCcw className="mr-2 h-4 w-4" />
+                  Retry Connection
+                </>
+              )}
+            </Button>
+          )}
+          <Button
+            onClick={onGoBack}
+            variant="outline"
+            className="w-full h-14 rounded-2xl font-bold text-sm uppercase tracking-widest"
+          >
+            Return to Dashboard
+          </Button>
+        </div>
+
+        {/* System Info */}
+        <div className="flex items-center justify-center gap-2 text-[10px] text-muted-foreground/40 font-bold uppercase tracking-widest">
+          <Shield className="h-3 w-3" />
+          SkILA Secure Exam Engine v3.0
+        </div>
+      </div>
+    </div>
+  );
 };
 
-const mockExam = {
-  id: "exam-1",
-  title: "Data Structures & Algorithms - Midterm",
-  timeLimit: 90, // 90 minutes
-  questions: [mockQuestion]
-};
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Loading Screen
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const ExamLoadingScreen = ({ message, isResume }: { message: string; isResume: boolean }) => (
+  <div className="min-h-screen bg-background flex items-center justify-center p-6">
+    <div className="text-center space-y-8">
+      <div className="relative mx-auto w-20 h-20">
+        <div className="absolute inset-0 rounded-full border-4 border-primary/20 animate-pulse" />
+        <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-primary animate-spin" />
+        <div className="absolute inset-3 rounded-full bg-primary/5 flex items-center justify-center">
+          {isResume ? (
+            <RefreshCcw className="h-6 w-6 text-primary animate-pulse" />
+          ) : (
+            <Shield className="h-6 w-6 text-primary" />
+          )}
+        </div>
+      </div>
+      <div className="space-y-2">
+        <h2 className="text-xl font-black tracking-tight text-foreground">
+          {isResume ? 'Resuming Session' : 'Initializing Exam'}
+        </h2>
+        <p className="text-muted-foreground text-sm">{message}</p>
+      </div>
+      <div className="flex items-center justify-center gap-2 text-[10px] text-muted-foreground/40 font-bold uppercase tracking-widest">
+        <Shield className="h-3 w-3" />
+        Secure Connection Active
+      </div>
+    </div>
+  </div>
+);
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Main Exam Component
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const MAX_RETRIES = 3;
 
 const Exam = () => {
   const { examId } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [testCases, setTestCases] = useState<any[]>([]);
-  const [isSubmitted, setIsSubmitted] = useState(false);
+
+  // Core state
   const [attempt, setAttempt] = useState<any>(null);
   const [test, setTest] = useState<any>(null);
   const [questions, setQuestions] = useState<any[]>([]);
+  const [testCases, setTestCases] = useState<any[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+
+  // UI state
   const [loading, setLoading] = useState(true);
+  const [loadingMessage, setLoadingMessage] = useState('Connecting to exam server...');
+  const [isResuming, setIsResuming] = useState(false);
+  const [isSubmitted, setIsSubmitted] = useState(false);
   const [submissionStatus, setSubmissionStatus] = useState<'idle' | 'processing'>('idle');
   const [judge0Available, setJudge0Available] = useState<boolean | null>(null);
 
+  // Session recovery state
+  const [sessionError, setSessionError] = useState<string | null>(null);
+  const [sessionErrorCode, setSessionErrorCode] = useState<string>('');
+  const [retryCount, setRetryCount] = useState(0);
+  const [isRetrying, setIsRetrying] = useState(false);
+  const [attemptData, setAttemptData] = useState<any>(null);
+
+  // Network health monitoring
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  // Track online/offline status
   useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      toast({
+        title: "Connection Restored",
+        description: "You're back online. Your session is safe.",
+      });
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+      toast({
+        title: "Connection Lost",
+        description: "You've gone offline. Don't worry — your progress is saved locally.",
+        variant: "destructive",
+      });
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [toast]);
+
+  // ─── Start or Resume Attempt ─────────────────────
+  const initExamSession = useCallback(async () => {
     if (!examId) {
       navigate('/dashboard');
       return;
     }
 
-    const startAttempt = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) {
-          navigate('/');
+    try {
+      setLoadingMessage('Authenticating...');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        navigate('/');
+        return;
+      }
+
+      setLoadingMessage('Connecting to exam server...');
+
+      // Call the start-attempt edge function
+      const { data, error } = await supabase.functions.invoke('start-attempt', {
+        body: { test_id: examId }
+      });
+
+      // Handle edge function HTTP errors
+      if (error) {
+        console.error('Edge function error:', error);
+        throw { message: error.message || 'Failed to reach the exam server.', code: 'NETWORK_ERROR' };
+      }
+
+      // Handle response-level errors
+      if (!data.success) {
+        console.log('Start-attempt returned:', data);
+
+        // Specific error handling
+        if (data.error_code === 'ALREADY_SUBMITTED') {
+          setAttemptData(data.data);
+          setSessionError(data.message);
+          setSessionErrorCode('ALREADY_SUBMITTED');
+          setLoading(false);
           return;
         }
 
-        // Start or resume attempt
-        const { data, error } = await supabase.functions.invoke('start-attempt', {
-          body: { test_id: examId }
-        });
-
-        if (error || !data.success) {
-          console.error('Start attempt error details:', { error, data });
-          throw new Error(data?.message || error?.message || 'Failed to start attempt');
+        if (data.error_code === 'ATTEMPT_EXPIRED') {
+          setAttemptData(data.data);
+          setSessionError(data.message);
+          setSessionErrorCode('ATTEMPT_EXPIRED');
+          setLoading(false);
+          return;
         }
 
-        console.log('Attempt data received:', data.data);
-        console.log('Attempt data type:', typeof data.data);
-        console.log('Attempt data keys:', data.data ? Object.keys(data.data) : 'null');
-        console.log('Attempt ID from data:', data.data?.id);
-        setAttempt(data.data);
-
-        // Fetch test and questions
-        const { data: testData } = await supabase
-          .from('tests')
-          .select(`
-            *,
-            test_questions!inner(
-              points,
-              order_index,
-              questions!inner(*)
-            )
-          `)
-          .eq('id', examId)
-          .single();
-
-        if (testData) {
-          setTest(testData);
-          const sortedQuestions = testData.test_questions
-            .sort((a: any, b: any) => a.order_index - b.order_index)
-            .map((tq: any) => tq.questions);
-          setQuestions(sortedQuestions);
-        }
-
-      } catch (error: any) {
-        console.error('Error starting attempt:', error);
-        toast({
-          title: "Error",
-          description: error.message || "Failed to start exam",
-          variant: "destructive",
-        });
-        navigate('/dashboard');
-      } finally {
-        setLoading(false);
+        throw { message: data.message || 'Unknown error from exam server.', code: data.error_code || 'UNKNOWN' };
       }
-    };
 
-    startAttempt();
+      // Success! We have an attempt.
+      const attemptPayload = data.data;
+      const wasResumed = data.resumed === true;
+
+      if (wasResumed) {
+        setIsResuming(true);
+        setLoadingMessage('Restoring your session...');
+        toast({
+          title: "Session Resumed",
+          description: data.message || "Welcome back! Your progress has been restored.",
+        });
+      } else {
+        setLoadingMessage('Preparing exam environment...');
+      }
+
+      setAttempt(attemptPayload);
+
+      // Fetch test details and questions
+      setLoadingMessage('Loading questions...');
+      const { data: testData } = await supabase
+        .from('tests')
+        .select(`
+          *,
+          test_questions!inner(
+            points,
+            order_index,
+            questions!inner(*)
+          )
+        `)
+        .eq('id', examId)
+        .single();
+
+      if (testData) {
+        setTest(testData);
+        const sortedQuestions = testData.test_questions
+          .sort((a: any, b: any) => a.order_index - b.order_index)
+          .map((tq: any) => tq.questions);
+        setQuestions(sortedQuestions);
+      }
+
+      // Clear any previous errors
+      setSessionError(null);
+      setSessionErrorCode('');
+
+    } catch (err: any) {
+      console.error('Error initializing exam session:', err);
+      setSessionError(err.message || 'Failed to start exam session.');
+      setSessionErrorCode(err.code || 'UNKNOWN');
+    } finally {
+      setLoading(false);
+      setIsRetrying(false);
+    }
   }, [examId, navigate, toast]);
 
-  // Test Judge0 connection on component mount
+  useEffect(() => {
+    initExamSession();
+  }, [initExamSession]);
+
+  // ─── Retry Handler ───────────────────────────────
+  const handleRetry = useCallback(async () => {
+    if (retryCount >= MAX_RETRIES) return;
+    setIsRetrying(true);
+    setRetryCount(prev => prev + 1);
+    setLoading(true);
+    setSessionError(null);
+    setSessionErrorCode('');
+
+    // Small delay to show the loading state
+    await new Promise(r => setTimeout(r, 1000));
+    await initExamSession();
+  }, [retryCount, initExamSession]);
+
+  // ─── Judge0 Connection Test ──────────────────────
   useEffect(() => {
     const testJudge0 = async () => {
       const isAvailable = await Judge0Service.testConnection();
       setJudge0Available(isAvailable);
       if (!isAvailable) {
         toast({
-          title: "Judge0 Server Unavailable",
-          description: "Cannot connect to code execution server. Please check your network or contact support.",
+          title: "Code Execution Server",
+          description: "Cannot reach code execution server. Check your network.",
           variant: "destructive",
         });
       }
@@ -184,8 +426,8 @@ const Exam = () => {
     testJudge0();
   }, [toast]);
 
-  // added by me
-  const currentQuestion = questions[currentQuestionIndex]; // <-- Move this up
+  // ─── Fetch test cases ────────────────────────────
+  const currentQuestion = questions[currentQuestionIndex];
   useEffect(() => {
     const fetchTestCases = async () => {
       if (!currentQuestion?.id) {
@@ -204,132 +446,87 @@ const Exam = () => {
         setTestCases(data || []);
       }
     };
-
     fetchTestCases();
   }, [currentQuestion?.id]);
 
-
-
+  // ─── Run Code ────────────────────────────────────
   const handleRunCode = async (code: string, language: string) => {
-    if (!questions[currentQuestionIndex]) {
-      throw new Error('No active question');
-    }
-    
-    if (!language || !code) {
-      throw new Error('Missing required fields for code execution');
-    }
-    
+    if (!questions[currentQuestionIndex]) throw new Error('No active question');
+    if (!language || !code) throw new Error('Missing required fields');
+
     try {
       setSubmissionStatus('processing');
-      
-      // Use test cases from the current question
       const testCasesForJudge0 = testCases.map(tc => ({
         input: tc.input,
         expected_output: tc.expected_output
       }));
-      
-      // Direct call to Judge0 service
       const results = await Judge0Service.executeCode(code, language, testCasesForJudge0);
-      
       setSubmissionStatus('idle');
       return results;
-      
     } catch (error) {
-      console.error('Error running code:', error);
       setSubmissionStatus('idle');
       throw error;
     }
   };
 
+  // ─── Submit Code ─────────────────────────────────
   const handleSubmitCode = async (code: string, language: string) => {
-    if (!questions[currentQuestionIndex]) {
-      throw new Error('No active question');
-    }
-
-    if (!language || !code) {
-      throw new Error('Missing required fields for code submission');
-    }
-
-    if (!attempt) {
-      throw new Error('No active attempt');
-    }
+    if (!questions[currentQuestionIndex]) throw new Error('No active question');
+    if (!language || !code) throw new Error('Missing required fields');
+    if (!attempt) throw new Error('No active attempt');
 
     try {
       setSubmissionStatus('processing');
-      
-      // First try the Supabase function
+
+      // Try edge function first
       try {
         const requestBody = {
           attempt_id: attempt.id,
           question_id: questions[currentQuestionIndex].id,
-          language: language,
-          code: code,
+          language,
+          code,
           run_type: 'submit'
         };
-        
-        console.log('Submitting to run-code function with:', requestBody);
-        
+
         const { data, error } = await supabase.functions.invoke('run-code', {
           body: requestBody
         });
 
-        if (error) {
-          console.warn('Supabase function failed, falling back to direct approach:', error);
-          throw error; // This will trigger the fallback
-        }
+        if (error) throw error;
+        if (!data.success) throw new Error(data.message || 'Function returned error');
 
-        if (!data.success) {
-          console.warn('Supabase function returned error, falling back:', data);
-          throw new Error(data.message || 'Function returned error');
-        }
-
-        // Success with Supabase function
         setSubmissionStatus('idle');
-        
         const passedCount = data.data.passed_count || 0;
         const totalCount = data.data.total_count || 0;
         const verdict = data.data.verdict || 'failed';
-        
+
         toast({
-          title: "Success",
-          description: `Code submitted! ${passedCount}/${totalCount} test cases passed.`,
+          title: verdict === 'passed' ? "All Tests Passed!" : "Submission Recorded",
+          description: `${passedCount}/${totalCount} test cases passed.`,
           variant: verdict === 'passed' ? 'default' : 'destructive'
         });
 
-        // Move to next question if available
         if (currentQuestionIndex < questions.length - 1) {
           setCurrentQuestionIndex(currentQuestionIndex + 1);
         }
 
-        // Trigger dashboard refresh
-        window.dispatchEvent(new CustomEvent('examSubmitted', { 
-          detail: { 
-            testId: test?.id,
-            score: data.data.score || 0,
-            maxScore: data.data.max_score || 100
-          } 
+        window.dispatchEvent(new CustomEvent('examSubmitted', {
+          detail: { testId: test?.id, score: data.data.score || 0, maxScore: data.data.max_score || 100 }
         }));
 
-        return; // Exit successfully
-
+        return;
       } catch (functionError) {
-        console.log('Falling back to direct Judge0 + manual storage approach');
-        
-        // Fallback: Use direct Judge0 service and manually store results
+        // Fallback: Direct Judge0
         const testCasesForJudge0 = testCases.map(tc => ({
           input: tc.input,
           expected_output: tc.expected_output
         }));
-        
-        // Execute code using optimized Judge0 service
+
         const results = await Judge0Service.executeCode(code, language, testCasesForJudge0);
-        
-        // Calculate results
         const passedCount = results.filter(r => r.passed).length;
         const totalCount = results.length;
         const verdict = passedCount === totalCount ? 'passed' : 'failed';
-        
-        // Get question points for proper scoring
+
         const { data: testQuestion } = await supabase
           .from('test_questions')
           .select('points')
@@ -341,18 +538,16 @@ const Exam = () => {
         const scorePercentage = totalCount > 0 ? passedCount / totalCount : 0;
         const questionScore = Math.round(questionPoints * scorePercentage);
 
-        // Manually store submission in database
         const { data: submissionData, error: submissionError } = await supabase
           .from('submissions')
           .insert({
             attempt_id: attempt.id,
             question_id: questions[currentQuestionIndex].id,
-            language: language,
-            code: code,
+            language, code,
             run_type: 'submit',
             passed_count: passedCount,
             total_count: totalCount,
-            verdict: verdict,
+            verdict,
             time_ms: results.reduce((sum, r) => sum + (r.executionTime || 0), 0) / results.length,
             memory_kb: results.reduce((sum, r) => sum + (r.memoryUsed || 0), 0) / results.length,
             stdout_preview: results[0]?.actualOutput?.slice(0, 500) || ''
@@ -360,12 +555,6 @@ const Exam = () => {
           .select()
           .single();
 
-        if (submissionError) {
-          console.error('Error storing submission:', submissionError);
-          // Continue anyway - at least the code was executed
-        }
-
-        // Store case results
         if (submissionData) {
           const caseResults = results.map((result, index) => ({
             submission_id: submissionData.id,
@@ -377,22 +566,17 @@ const Exam = () => {
             time_ms: result.executionTime || 0,
             memory_kb: result.memoryUsed || 0
           }));
-          
-          await supabase
-            .from('submission_case_results')
-            .insert(caseResults);
+          await supabase.from('submission_case_results').insert(caseResults);
         }
 
         // Update attempt score
         try {
-          // Get current attempt score
           const { data: currentAttempt } = await supabase
             .from('attempts')
             .select('score')
             .eq('id', attempt.id)
             .single();
 
-          // Get all previous submissions for this question to find best score
           const { data: previousSubmissions } = await supabase
             .from('submissions')
             .select('passed_count, total_count')
@@ -401,222 +585,110 @@ const Exam = () => {
             .eq('run_type', 'submit')
             .order('created_at', { ascending: false });
 
-          // Find the best score for this question
           let bestScore = 0;
           if (previousSubmissions && previousSubmissions.length > 0) {
             bestScore = Math.max(...previousSubmissions.map(sub => {
-              const percentage = sub.total_count > 0 ? sub.passed_count / sub.total_count : 0;
-              return Math.round(questionPoints * percentage);
+              const pct = sub.total_count > 0 ? sub.passed_count / sub.total_count : 0;
+              return Math.round(questionPoints * pct);
             }));
           }
 
-          // Only update if this submission has a better score
           if (questionScore > bestScore) {
             const newTotalScore = (currentAttempt?.score || 0) - bestScore + questionScore;
-            
-            await supabase
-              .from('attempts')
-              .update({ 
-                score: newTotalScore
-              })
-              .eq('id', attempt.id);
+            await supabase.from('attempts').update({ score: newTotalScore }).eq('id', attempt.id);
           }
         } catch (scoreError) {
           console.error('Error updating attempt score:', scoreError);
-          // Continue anyway
         }
 
         setSubmissionStatus('idle');
-        
         toast({
-          title: "Success",
-          description: `Code submitted! ${passedCount}/${totalCount} test cases passed.`,
+          title: verdict === 'passed' ? "All Tests Passed!" : "Submission Recorded",
+          description: `${passedCount}/${totalCount} test cases passed.`,
           variant: verdict === 'passed' ? 'default' : 'destructive'
         });
 
-        // Move to next question if available
         if (currentQuestionIndex < questions.length - 1) {
           setCurrentQuestionIndex(currentQuestionIndex + 1);
         }
 
-        // Trigger dashboard refresh
-        window.dispatchEvent(new CustomEvent('examSubmitted', { 
-          detail: { 
-            testId: test?.id,
-            score: questionScore,
-            maxScore: questionPoints
-          } 
+        window.dispatchEvent(new CustomEvent('examSubmitted', {
+          detail: { testId: test?.id, score: questionScore, maxScore: questionPoints }
         }));
       }
-
     } catch (error) {
-      console.error('Error submitting code:', error);
       setSubmissionStatus('idle');
       throw error;
     }
   };
 
+  // ─── Submit Exam ─────────────────────────────────
   const handleSubmitExam = async () => {
     if (!attempt) {
-      toast({
-        title: "Error",
-        description: "No active attempt found",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "No active attempt found", variant: "destructive" });
       return;
     }
 
     try {
       setIsSubmitted(true);
 
-      console.log('Submitting final exam with attempt:', attempt);
-      console.log('Attempt ID:', attempt.id);
-      console.log('Attempt status:', attempt.status);
-      console.log('Attempt object keys:', Object.keys(attempt));
-      
-      // Validate attempt object
-      if (!attempt || !attempt.id) {
-        console.error('Invalid attempt object:', attempt);
-        throw new Error('Invalid attempt data - missing ID');
-      }
+      if (!attempt.id) throw new Error('Invalid attempt data');
 
-      // Check for existing submissions before finalizing
-      const { data: existingSubmissions, error: submissionsCheckError } = await supabase
-        .from('submissions')
-        .select('*')
-        .eq('attempt_id', attempt.id);
-
-      console.log('Existing submissions for this attempt:', existingSubmissions);
-      console.log('Submissions check error:', submissionsCheckError);
-
-      // First try the Supabase function
+      // Try edge function first
       try {
         const { data, error } = await supabase.functions.invoke('finalize-attempt', {
           body: { attempt_id: attempt.id }
         });
 
-        console.log('Finalize attempt response:', { data, error });
-        console.log('Finalize attempt data details:', data?.data);
-        console.log('Final score from function:', data?.data?.score);
-        console.log('Max score from function:', data?.data?.max_score);
+        if (error) throw error;
+        if (!data.success) throw new Error(data.message || 'Function returned error');
 
-        if (error) {
-          console.warn('Supabase function failed, falling back to manual submission:', error);
-          throw error; // This will trigger the fallback
-        }
-
-        if (!data.success) {
-          console.warn('Supabase function returned error, falling back:', data);
-          throw new Error(data.message || 'Function returned error');
-        }
-
-        // Success with Supabase function
         toast({
           title: "Exam Submitted Successfully!",
           description: `Your score: ${data.data.score}/${data.data.max_score} (${Math.round((data.data.score / data.data.max_score) * 100)}%)`,
         });
 
-        // Trigger a custom event to refresh dashboard components
-        window.dispatchEvent(new CustomEvent('examSubmitted', { 
-          detail: { 
-            testId: test?.id,
-            score: data.data.score,
-            maxScore: data.data.max_score
-          } 
+        window.dispatchEvent(new CustomEvent('examSubmitted', {
+          detail: { testId: test?.id, score: data.data.score, maxScore: data.data.max_score }
         }));
 
-        // Navigate back to dashboard after 3 seconds
-        setTimeout(() => {
-          navigate('/dashboard');
-        }, 3000);
-
-        return; // Exit successfully
-
+        setTimeout(() => navigate('/dashboard'), 3000);
+        return;
       } catch (functionError) {
-        console.log('Falling back to manual exam finalization');
-        
-        // Validate attempt again before fallback
-        if (!attempt || !attempt.id) {
-          console.error('Invalid attempt object in fallback:', attempt);
-          throw new Error('Invalid attempt data - missing ID');
-        }
-        
-        console.log('Using attempt ID for fallback:', attempt.id);
-        
-        // Fallback: Manually finalize the exam
+        // Manual fallback finalization
         const now = new Date();
         const endsAt = new Date(attempt.ends_at);
         const status = now >= endsAt ? 'auto_submitted' : 'submitted';
 
-        // Get all submissions for this attempt
-        const { data: submissions, error: submissionsError } = await supabase
+        const { data: submissions } = await supabase
           .from('submissions')
-          .select(`
-            question_id,
-            verdict,
-            passed_count,
-            total_count
-          `)
+          .select('question_id, verdict, passed_count, total_count')
           .eq('attempt_id', attempt.id)
           .eq('run_type', 'submit');
-
-        console.log('Submissions query result:', { submissions, submissionsError });
-        
-        if (submissionsError) {
-          console.error('Error fetching submissions:', submissionsError);
-          throw new Error(`Failed to fetch submissions: ${submissionsError.message}`);
-        }
 
         let finalScore = 0;
         const questionScores = new Map();
 
-        console.log('Calculating scores for submissions:', submissions);
-
-        // Calculate score for each question (best submission per question)
         for (const submission of submissions || []) {
-          const questionId = submission.question_id;
-          const passedCount = submission.passed_count || 0;
-          const totalCount = submission.total_count || 1;
-          
-          console.log(`Processing question ${questionId}: ${passedCount}/${totalCount} passed`);
-          
-          // Get points for this question from test_questions table
-          const { data: testQuestion, error: testQuestionError } = await supabase
+          const { data: testQuestion } = await supabase
             .from('test_questions')
             .select('points')
             .eq('test_id', attempt.test_id)
-            .eq('question_id', questionId)
+            .eq('question_id', submission.question_id)
             .single();
-          
-          if (testQuestionError) {
-            console.error(`Error fetching test question for ${questionId}:`, testQuestionError);
-          }
-          
+
           const points = testQuestion?.points || 100;
-          console.log(`Question ${questionId} points: ${points}`);
-          
-          // Calculate score based on percentage of test cases passed
-          const scorePercentage = totalCount > 0 ? passedCount / totalCount : 0;
-          const questionScore = Math.round(points * scorePercentage);
-          
-          console.log(`Question ${questionId} score: ${questionScore} (${(scorePercentage * 100).toFixed(1)}%)`);
-          
-          if (!questionScores.has(questionId)) {
-            questionScores.set(questionId, 0);
-          }
-          
-          // Keep the best score for this question
-          if (questionScore > questionScores.get(questionId)) {
-            questionScores.set(questionId, questionScore);
+          const pct = submission.total_count > 0 ? submission.passed_count / submission.total_count : 0;
+          const questionScore = Math.round(points * pct);
+
+          if (!questionScores.has(submission.question_id)) questionScores.set(submission.question_id, 0);
+          if (questionScore > questionScores.get(submission.question_id)) {
+            questionScores.set(submission.question_id, questionScore);
           }
         }
 
-        // Sum up all question scores
-        finalScore = Array.from(questionScores.values()).reduce((sum, score) => sum + score, 0);
-        console.log('Final calculated score:', finalScore);
-        console.log('Question scores map:', Object.fromEntries(questionScores));
+        finalScore = Array.from(questionScores.values()).reduce((sum, s) => sum + s, 0);
 
-        // Get max possible score
         const { data: testQuestions } = await supabase
           .from('test_questions')
           .select('points')
@@ -624,59 +696,24 @@ const Exam = () => {
 
         const maxScore = testQuestions?.reduce((sum, q) => sum + (q.points || 100), 0) || 100;
 
-        // Finalize attempt with calculated score
-        console.log('Updating attempt with:', {
-          id: attempt.id,
+        await supabase.from('attempts').update({
           status,
           submitted_at: now.toISOString(),
           score: finalScore,
           max_score: maxScore
-        });
-
-        const { data: updateData, error: updateError } = await supabase
-          .from('attempts')
-          .update({ 
-            status,
-            submitted_at: now.toISOString(),
-            score: finalScore,
-            max_score: maxScore
-          })
-          .eq('id', attempt.id)
-          .select();
-
-        console.log('Update result:', { updateData, updateError });
-
-        if (updateError) {
-          console.error('Error updating attempt:', updateError);
-          console.error('Update error details:', {
-            message: updateError.message,
-            details: updateError.details,
-            hint: updateError.hint,
-            code: updateError.code
-          });
-          throw new Error(`Failed to finalize exam: ${updateError.message}`);
-        }
+        }).eq('id', attempt.id);
 
         toast({
           title: "Exam Submitted Successfully!",
           description: `Your score: ${finalScore}/${maxScore} (${Math.round((finalScore / maxScore) * 100)}%)`,
         });
 
-        // Trigger a custom event to refresh dashboard components
-        window.dispatchEvent(new CustomEvent('examSubmitted', { 
-          detail: { 
-            testId: test?.id,
-            score: finalScore,
-            maxScore: maxScore
-          } 
+        window.dispatchEvent(new CustomEvent('examSubmitted', {
+          detail: { testId: test?.id, score: finalScore, maxScore: maxScore }
         }));
 
-        // Navigate back to dashboard after 3 seconds
-        setTimeout(() => {
-          navigate('/dashboard');
-        }, 3000);
+        setTimeout(() => navigate('/dashboard'), 3000);
       }
-
     } catch (error: any) {
       console.error('Error submitting exam:', error);
       toast({
@@ -688,33 +725,53 @@ const Exam = () => {
     }
   };
 
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // RENDER STATES
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  // Loading
   if (loading) {
+    return <ExamLoadingScreen message={loadingMessage} isResume={isResuming} />;
+  }
+
+  // Session error (with retry UI)
+  if (sessionError) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-      </div>
+      <SessionRecoveryScreen
+        error={sessionError}
+        errorCode={sessionErrorCode}
+        retryCount={retryCount}
+        maxRetries={MAX_RETRIES}
+        onRetry={handleRetry}
+        onGoBack={() => navigate('/dashboard')}
+        isRetrying={isRetrying}
+        examTitle={test?.name}
+        attemptData={attemptData}
+      />
     );
   }
 
+  // No test/questions loaded
   if (!test || questions.length === 0) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-foreground mb-2">Test Not Found</h2>
-          <p className="text-muted-foreground mb-4">The requested test could not be loaded.</p>
-          <button 
-            onClick={() => navigate('/dashboard')}
-            className="px-4 py-2 bg-primary text-primary-foreground rounded-md"
-          >
+      <div className="min-h-screen flex items-center justify-center bg-background p-6">
+        <div className="text-center space-y-6 max-w-md">
+          <div className="mx-auto w-16 h-16 rounded-2xl bg-muted/20 border border-white/5 flex items-center justify-center">
+            <AlertCircle className="h-8 w-8 text-muted-foreground/40" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-2xl font-black text-foreground">Test Not Found</h2>
+            <p className="text-muted-foreground text-sm">The requested test could not be loaded or doesn't contain any questions.</p>
+          </div>
+          <Button onClick={() => navigate('/dashboard')} className="rounded-xl px-8 h-12 font-bold">
             Back to Dashboard
-          </button>
+          </Button>
         </div>
       </div>
     );
   }
 
-// ...existing code...
-
+  // ─── Main Exam View ──────────────────────────────
   return (
     <div className="min-h-screen bg-background">
       <ExamHeader
@@ -727,46 +784,57 @@ const Exam = () => {
         totalQuestions={questions.length}
         onQuestionChange={setCurrentQuestionIndex}
       />
-      
-      {/* Submission Status Indicator */}
+
+      {/* Processing indicator */}
       {submissionStatus === 'processing' && (
-        <div className="fixed top-20 right-4 bg-blue-100 border border-blue-300 rounded-lg p-4 shadow-lg z-50">
+        <div className="fixed top-20 right-4 bg-primary/10 border border-primary/20 rounded-2xl p-4 shadow-xl z-50 backdrop-blur-xl">
           <div className="flex items-center space-x-3">
-            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+            <Loader2 className="h-5 w-5 text-primary animate-spin" />
             <div>
-              <p className="text-sm font-medium text-blue-800">Processing Code</p>
-              <p className="text-xs text-blue-600">Please wait...</p>
+              <p className="text-sm font-bold text-foreground">Processing Code</p>
+              <p className="text-xs text-muted-foreground">Executing test cases...</p>
             </div>
           </div>
         </div>
       )}
 
-      {/* Judge0 Status Indicator */}
+      {/* Network status indicator */}
+      {!isOnline && (
+        <div className="fixed top-20 left-4 bg-red-500/10 border border-red-500/20 rounded-2xl p-4 shadow-xl z-50 backdrop-blur-xl max-w-sm">
+          <div className="flex items-center space-x-3">
+            <WifiOff className="h-5 w-5 text-red-500 animate-pulse" />
+            <div>
+              <p className="text-sm font-bold text-red-500">Offline</p>
+              <p className="text-xs text-muted-foreground">Your progress is saved. Reconnect to submit.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Judge0 status */}
       {judge0Available === false && (
-        <div className="fixed top-20 left-4 bg-red-100 border border-red-300 rounded-lg p-4 shadow-lg z-50 max-w-sm">
+        <div className="fixed top-20 left-4 bg-red-500/10 border border-red-500/20 rounded-2xl p-4 shadow-xl z-50 backdrop-blur-xl max-w-sm">
           <div className="flex items-center space-x-3">
-            <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+            <XCircle className="h-5 w-5 text-red-500" />
             <div>
-              <p className="text-sm font-medium text-red-800">Code Execution Unavailable</p>
-              <p className="text-xs text-red-600">Cannot connect to Judge0 server</p>
+              <p className="text-sm font-bold text-red-500">Code Server Unavailable</p>
+              <p className="text-xs text-muted-foreground">Cannot connect to Judge0</p>
             </div>
           </div>
         </div>
       )}
 
-      
-      <main className="container mx-auto p-4 h-[calc(100vh-64px)]">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-full">
-          <div className="h-full">
-            <QuestionPanel 
+      <main className="px-2 py-2 h-[calc(100vh-48px)]">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 h-full">
+          <div className="h-full min-h-0">
+            <QuestionPanel
               question={{
                 ...currentQuestion,
-                testCases: testCases // Test cases will be fetched by the run-code function
-              }} 
+                testCases: testCases
+              }}
             />
           </div>
-          
-          <div className="h-full">
+          <div className="h-full min-h-0">
             <CodeEditor
               key={`question-${currentQuestionIndex}`}
               onRunCode={handleRunCode}
@@ -777,8 +845,8 @@ const Exam = () => {
           </div>
         </div>
       </main>
-      
-      {/* Performance Monitor */}
+
+
       <PerformanceMonitor />
     </div>
   );
