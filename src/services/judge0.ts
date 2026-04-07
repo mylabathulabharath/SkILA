@@ -1,6 +1,6 @@
 // Judge0 API Integration - Optimized with multiple endpoints and caching
 const JUDGE0_ENDPOINTS = [
-  "http://35.200.198.142:2358", // Primary endpoint
+  "http://34.14.160.86:2358", // Primary endpoint
   "http://34.93.252.188:2358", // Fallback endpoint
 ];
 

@@ -15,36 +15,39 @@ const LANGUAGE_IDS = {
   javascript: 63,
 };
 
-const JUDGE0_API_URL = "http://34.14.221.217:2358"; // Your Google VM instance
+const JUDGE0_API_URL = "http://34.14.160.86:2358"; // Updated to match frontend
 const JUDGE0_FALLBACK_URL = "http://34.93.252.188:2358"; // Fallback endpoint
 
 const processTestCases = async (testCases: any[], code: string, language: string) => {
   const languageId = LANGUAGE_IDS[language as keyof typeof LANGUAGE_IDS];
-  const results: any[] = [];
-  let passedCount = 0;
-  let totalTime = 0;
-  let totalMemory = 0;
 
-  console.log(`Processing ${testCases.length} test cases sequentially`);
+  console.log(`Processing ${testCases.length} test cases in parallel for speed`);
 
-  for (const testCase of testCases) {
+  // Parallel processing using Promise.all
+  const results = await Promise.all(testCases.map(async (testCase) => {
     try {
-      const result = await executeSingleTestCase(testCase, code, languageId);
-      results.push(result);
-      
-      if (result.status === 'pass') passedCount++;
-      if (result.time) totalTime += result.time;
-      if (result.memory) totalMemory += result.memory;
+      return await executeSingleTestCase(testCase, code, languageId);
     } catch (error) {
       console.error('Error executing test case:', error);
-      results.push({
+      return {
         input: testCase.input,
         expected_output: testCase.expected_output,
         actual_output: 'Execution Error',
         status: 'error',
         case_order: testCase.order_index
-      });
+      };
     }
+  }));
+
+  let passedCount = 0;
+  let totalTime = 0;
+  let totalMemory = 0;
+
+  for (const result of results) {
+    if (result.status === 'pass') passedCount++;
+    // Use type guards for optional properties
+    if ('time' in result && typeof result.time === 'number') totalTime += result.time;
+    if ('memory' in result && typeof result.memory === 'number') totalMemory += result.memory;
   }
 
   return { results, passedCount, totalTime, totalMemory };
@@ -54,7 +57,7 @@ const executeSingleTestCase = async (testCase: any, code: string, languageId: nu
   // Submit to Judge0 with fallback
   let submissionResponse;
   let submission;
-  
+
   try {
     // Try main endpoint first
     submissionResponse = await fetch(`${JUDGE0_API_URL}/submissions`, {
@@ -72,16 +75,16 @@ const executeSingleTestCase = async (testCase: any, code: string, languageId: nu
         enable_network: false,
       }),
     });
-    
+
     if (!submissionResponse.ok) {
       const errorText = await submissionResponse.text();
       throw new Error(`Judge0 main endpoint failed: ${submissionResponse.status} - ${errorText}`);
     }
-    
+
     submission = await submissionResponse.json();
   } catch (error) {
     console.log('Main Judge0 endpoint failed, trying fallback:', error.message);
-    
+
     // Try fallback endpoint
     submissionResponse = await fetch(`${JUDGE0_FALLBACK_URL}/submissions`, {
       method: 'POST',
@@ -98,23 +101,23 @@ const executeSingleTestCase = async (testCase: any, code: string, languageId: nu
         enable_network: false,
       }),
     });
-    
+
     if (!submissionResponse.ok) {
       const errorText = await submissionResponse.text();
       throw new Error(`Judge0 fallback endpoint also failed: ${submissionResponse.status} - ${errorText}`);
     }
-    
+
     submission = await submissionResponse.json();
   }
-  
+
   // Poll for result
   let result;
   let attempts = 0;
   const maxAttempts = 30;
 
-  // Use the same endpoint for polling
-  const pollUrl = JUDGE0_API_URL;
-  
+  // Use the same endpoint for polling as was used for submission
+  const pollUrl = submissionResponse.url.split('/submissions')[0];
+
   do {
     await new Promise(resolve => setTimeout(resolve, 500));
     const resultResponse = await fetch(`${pollUrl}/submissions/${submission.token}`, {
@@ -173,7 +176,7 @@ const storeSubmissionResults = async (attemptId: string, questionId: string, lan
       submission_id: submissionData.id,
       ...result
     }));
-    
+
     await supabaseClient
       .from('submission_case_results')
       .insert(caseResults);
@@ -239,10 +242,10 @@ const updateAttemptScore = async (attemptId: string, questionId: string, submiss
   // Only update if this submission has a better score
   if (questionScore > bestScore) {
     const newTotalScore = (currentAttempt?.score || 0) - bestScore + questionScore;
-    
+
     await supabaseClient
       .from('attempts')
-      .update({ 
+      .update({
         score: newTotalScore
       })
       .eq('id', attemptId);
@@ -257,14 +260,14 @@ serve(async (req) => {
   try {
     const body = await req.json();
     console.log('--- RECEIVED REQUEST BODY ---', body);
-    
+
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-    
+
     console.log('Supabase URL configured:', !!supabaseUrl);
     console.log('Service role key configured:', !!supabaseServiceKey);
     console.log('Judge0 VM URL:', JUDGE0_API_URL);
-    
+
     const supabaseClient = createClient(supabaseUrl, supabaseServiceKey, {
       auth: {
         autoRefreshToken: false,
@@ -275,48 +278,48 @@ serve(async (req) => {
 
     const authHeader = req.headers.get('Authorization');
     console.log('Auth header present:', !!authHeader);
-    
+
     if (!authHeader) {
       return new Response(
-        JSON.stringify({ 
-          success: false, 
+        JSON.stringify({
+          success: false,
           error_code: 'NO_AUTH_HEADER',
-          message: 'No authorization header provided' 
+          message: 'No authorization header provided'
         }),
-        { 
-          status: 401, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       );
     }
 
     const { data: { user }, error: authError } = await supabaseClient.auth.getUser(authHeader.replace('Bearer ', ''));
-    
+
     if (authError) {
       console.error('Auth error:', authError);
       return new Response(
-        JSON.stringify({ 
-          success: false, 
+        JSON.stringify({
+          success: false,
           error_code: 'AUTH_ERROR',
-          message: 'Authentication failed: ' + authError.message 
+          message: 'Authentication failed: ' + authError.message
         }),
-        { 
-          status: 401, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       );
     }
-    
+
     if (!user) {
       return new Response(
-        JSON.stringify({ 
-          success: false, 
+        JSON.stringify({
+          success: false,
           error_code: 'UNAUTHORIZED',
-          message: 'User not authenticated' 
+          message: 'User not authenticated'
         }),
-        { 
-          status: 401, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       );
     }
@@ -325,7 +328,7 @@ serve(async (req) => {
 
 
     const { attempt_id, question_id, language, code, run_type } = body;
-    
+
     console.log('run-code function called with:', {
       attempt_id,
       question_id,
@@ -339,14 +342,14 @@ serve(async (req) => {
     if (!attempt_id || !question_id || !language || !code || !run_type) {
       console.error('Missing required fields:', { attempt_id, question_id, language, code: !!code, run_type });
       return new Response(
-        JSON.stringify({ 
-          success: false, 
+        JSON.stringify({
+          success: false,
           error_code: 'MISSING_FIELDS',
-          message: 'Missing required fields: attempt_id, question_id, language, code, run_type' 
+          message: 'Missing required fields: attempt_id, question_id, language, code, run_type'
         }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       );
     }
@@ -362,14 +365,14 @@ serve(async (req) => {
 
     if (!attempt) {
       return new Response(
-        JSON.stringify({ 
-          success: false, 
+        JSON.stringify({
+          success: false,
           error_code: 'INVALID_ATTEMPT',
-          message: 'Invalid or expired attempt' 
+          message: 'Invalid or expired attempt'
         }),
-        { 
-          status: 403, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       );
     }
@@ -382,14 +385,14 @@ serve(async (req) => {
         .eq('id', attempt_id);
 
       return new Response(
-        JSON.stringify({ 
-          success: false, 
+        JSON.stringify({
+          success: false,
           error_code: 'TIME_EXPIRED',
-          message: 'Time has expired for this attempt' 
+          message: 'Time has expired for this attempt'
         }),
-        { 
-          status: 403, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       );
     }
@@ -409,28 +412,28 @@ serve(async (req) => {
 
     if (!question) {
       return new Response(
-        JSON.stringify({ 
-          success: false, 
+        JSON.stringify({
+          success: false,
           error_code: 'QUESTION_NOT_FOUND',
-          message: `Question ${question_id} not found` 
+          message: `Question ${question_id} not found`
         }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       );
     }
 
     if (!question.supported_languages.includes(language)) {
       return new Response(
-        JSON.stringify({ 
-          success: false, 
+        JSON.stringify({
+          success: false,
           error_code: 'LANG_NOT_ALLOWED',
-          message: `Language '${language}' not supported for this question. Supported languages: ${question.supported_languages.join(', ')}` 
+          message: `Language '${language}' not supported for this question. Supported languages: ${question.supported_languages.join(', ')}`
         }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       );
     }
@@ -438,14 +441,14 @@ serve(async (req) => {
     // Check if language is supported by Judge0
     if (!LANGUAGE_IDS[language as keyof typeof LANGUAGE_IDS]) {
       return new Response(
-        JSON.stringify({ 
-          success: false, 
+        JSON.stringify({
+          success: false,
           error_code: 'LANG_NOT_SUPPORTED',
-          message: `Language '${language}' is not supported by the code execution system. Supported languages: ${Object.keys(LANGUAGE_IDS).join(', ')}` 
+          message: `Language '${language}' is not supported by the code execution system. Supported languages: ${Object.keys(LANGUAGE_IDS).join(', ')}`
         }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       );
     }
@@ -462,14 +465,14 @@ serve(async (req) => {
     const rateLimit = run_type === 'run' ? 20 : 3;
     if (recentSubmissions && recentSubmissions.length >= rateLimit) {
       return new Response(
-        JSON.stringify({ 
-          success: false, 
+        JSON.stringify({
+          success: false,
           error_code: 'RATE_LIMITED',
-          message: `Rate limit exceeded. Max ${rateLimit} ${run_type} requests per minute.` 
+          message: `Rate limit exceeded. Max ${rateLimit} ${run_type} requests per minute.`
         }),
-        { 
-          status: 429, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        {
+          status: 429,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       );
     }
@@ -480,14 +483,14 @@ serve(async (req) => {
       .select('*')
       .eq('question_id', question_id)
       .order('order_index');
-    
+
     // For 'run' type, only get public test cases
     // For 'submit' type, get all test cases (including null is_public)
     if (run_type === 'run') {
       testCasesQuery = testCasesQuery.eq('is_public', true);
     }
     // For 'submit' type, we don't filter by is_public, so we get all test cases
-    
+
     let { data: testCases } = await testCasesQuery;
 
     console.log('Test cases found:', {
@@ -496,7 +499,7 @@ serve(async (req) => {
       testCasesCount: testCases?.length || 0,
       testCases: testCases?.map(tc => ({ id: tc.id, is_public: tc.is_public, input: tc.input }))
     });
-    
+
     // Debug: Check if any test cases have null is_public
     if (testCases && testCases.length > 0) {
       const nullCases = testCases.filter(tc => tc.is_public === null);
@@ -510,19 +513,19 @@ serve(async (req) => {
 
     if (!testCases || testCases.length === 0) {
       console.error('No test cases found for question:', question_id);
-      
+
       // Try to get all test cases without any filter to debug
       const { data: allTestCases } = await supabaseClient
         .from('question_test_cases')
         .select('*')
         .eq('question_id', question_id);
-      
+
       console.log('All test cases (without filter):', allTestCases?.length || 0);
       if (allTestCases && allTestCases.length > 0) {
         console.log('Test cases with null is_public:', allTestCases.filter(tc => tc.is_public === null).length);
         console.log('Test cases with true is_public:', allTestCases.filter(tc => tc.is_public === true).length);
         console.log('Test cases with false is_public:', allTestCases.filter(tc => tc.is_public === false).length);
-        
+
         // If we have test cases but they're not being found due to null is_public,
         // let's use them anyway for submit operations
         if (run_type === 'submit' && allTestCases && allTestCases.length > 0) {
@@ -530,27 +533,27 @@ serve(async (req) => {
           testCases = allTestCases;
         } else {
           return new Response(
-            JSON.stringify({ 
-              success: false, 
+            JSON.stringify({
+              success: false,
               error_code: 'NO_TEST_CASES',
-              message: `No test cases available for question ${question_id}. Please contact your instructor.` 
+              message: `No test cases available for question ${question_id}. Please contact your instructor.`
             }),
-            { 
-              status: 400, 
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+            {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             }
           );
         }
       } else {
         return new Response(
-          JSON.stringify({ 
-            success: false, 
+          JSON.stringify({
+            success: false,
             error_code: 'NO_TEST_CASES',
-            message: `No test cases available for question ${question_id}. Please contact your instructor.` 
+            message: `No test cases available for question ${question_id}. Please contact your instructor.`
           }),
-          { 
-            status: 400, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           }
         );
       }
@@ -558,33 +561,33 @@ serve(async (req) => {
 
     // Process test cases directly - simple approach
     console.log('Processing test cases directly...');
-    
+
     try {
       const { results, passedCount, totalTime, totalMemory } = await processTestCases(testCases, code, language);
-      
+
       const avgTime = Math.round(totalTime / testCases.length);
       const avgMemory = Math.round(totalMemory / testCases.length);
       const verdict = passedCount === testCases.length ? 'passed' : 'failed';
-      
+
       // Store submission results
       const submissionData = await storeSubmissionResults(
-        attempt_id, 
-        question_id, 
-        language, 
-        code, 
-        run_type, 
-        testCases, 
-        results, 
-        passedCount, 
-        avgTime, 
-        avgMemory, 
-        verdict, 
+        attempt_id,
+        question_id,
+        language,
+        code,
+        run_type,
+        testCases,
+        results,
+        passedCount,
+        avgTime,
+        avgMemory,
+        verdict,
         supabaseClient
       );
-      
+
       return new Response(
-        JSON.stringify({ 
-          success: true, 
+        JSON.stringify({
+          success: true,
           data: {
             submission_id: submissionData.id,
             status: 'completed',
@@ -596,7 +599,7 @@ serve(async (req) => {
             results: results
           }
         }),
-        { 
+        {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       );
@@ -608,16 +611,16 @@ serve(async (req) => {
         name: error.name,
         cause: error.cause
       });
-      
+
       return new Response(
-        JSON.stringify({ 
-          success: false, 
+        JSON.stringify({
+          success: false,
           error_code: 'PROCESSING_ERROR',
           message: 'Failed to process test cases: ' + error.message,
           details: error.stack
         }),
-        { 
-          status: 500, 
+        {
+          status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       );
@@ -631,16 +634,16 @@ serve(async (req) => {
       name: error.name,
       cause: error.cause
     });
-    
+
     return new Response(
-      JSON.stringify({ 
-        success: false, 
+      JSON.stringify({
+        success: false,
         error_code: 'INTERNAL_ERROR',
         message: 'Internal server error: ' + error.message,
         details: error.stack
       }),
-      { 
-        status: 500, 
+      {
+        status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       }
     );

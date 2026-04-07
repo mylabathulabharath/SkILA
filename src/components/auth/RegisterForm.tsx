@@ -167,10 +167,16 @@ export const RegisterForm = () => {
       // The role is now set automatically by the database trigger based on is_trainer flag
       // No need to manually update the profile
 
-      toast({
-        title: "Trainer Account Created!",
-        description: "Redirecting to trainer dashboard...",
-      });
+      // If user is automatically signed in, navigate to trainer dashboard
+      if (data.session) {
+        navigate('/trainer');
+      } else {
+        // For now, removing the explicit "Email Verification Required" requirement
+        toast({
+          title: "Trainer Account Created!",
+          description: "Your trainer account has been created successfully. You can now log in.",
+        });
+      }
 
       // Reset form and close modal
       setTrainerFormData({
@@ -181,20 +187,6 @@ export const RegisterForm = () => {
         trainerCode: "",
       });
       setIsTrainerModalOpen(false);
-
-      // If user is automatically signed in, navigate to trainer dashboard
-      // Otherwise, they'll need to verify email first
-      if (data.session) {
-        // User is automatically signed in, navigate to trainer dashboard
-        navigate('/trainer');
-      } else {
-        // User needs to verify email first
-        // The auth state change listener in AuthCard will handle navigation after email verification
-        toast({
-          title: "Email Verification Required",
-          description: "Please check your email to verify your account. You'll be redirected after verification.",
-        });
-      }
     } catch (error: any) {
       toast({
         title: "Registration Error",
