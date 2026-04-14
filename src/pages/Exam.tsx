@@ -273,6 +273,11 @@ const Exam = () => {
       setIsOnline(false);
       toast({
         title: "Connection Lost",
+        description: "You've gone offline. Don't worry — your progress is saved locally.",
+        variant: "destructive",
+      });
+    };
+
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     return () => {
@@ -282,11 +287,6 @@ const Exam = () => {
   }, [toast]);
 
   // ─── Start or Resume Attempt ─────────────────────
-  const initExamSession = useCallback(async () => {
-    if (!examId) {
-      navigate('/dashboard');
-      return;
-    }
   const initExamSession = useCallback(async () => {
     if (!examId) {
       navigate('/dashboard');
