@@ -16,6 +16,7 @@ import McqDashboard from "./pages/McqDashboard";
 import McqSubjectDetail from "./pages/McqSubjectDetail";
 import McqConceptDetail from "./pages/McqConceptDetail";
 import McqTest from "./pages/McqTest";
+import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -73,6 +74,7 @@ const App = () => {
             <Route path="/mcq/subject/:subjectId" element={user ? <McqSubjectDetail /> : <Index />} />
             <Route path="/mcq/concept/:conceptId" element={user ? <McqConceptDetail /> : <Index />} />
             <Route path="/mcq/test/:testId" element={user ? <McqTest /> : <Index />} />
+            <Route path="/profile" element={user ? <Profile /> : <Index />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

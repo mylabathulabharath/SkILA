@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Users, CheckCircle2, Loader2 } from "lucide-react";
+import { Users, CheckCircle2, Loader2, Sparkles } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -118,80 +118,94 @@ export const BatchEnrollment = () => {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="grid gap-6 md:grid-cols-12">
+    <div className="space-y-8">
+      <div className="grid gap-10 md:grid-cols-12">
         {/* Current Batches - Left 7 columns */}
-        <Card className="md:col-span-7 bg-white/40 backdrop-blur-md border-white/20 shadow-sm rounded-3xl overflow-hidden relative group">
-          <div className="absolute top-0 right-0 p-8 opacity-[0.03] group-hover:opacity-[0.07] transition-opacity">
-            <Users className="h-32 w-32 rotate-12" />
+        <div className="md:col-span-7 glass-card rounded-[2.5rem] p-8 relative overflow-hidden group transition-all duration-500 hover:shadow-lg">
+          <div className="absolute -top-10 -right-10 p-12 opacity-[0.03] group-hover:opacity-[0.08] transition-all duration-700 group-hover:scale-110 group-hover:-rotate-12">
+            <Users className="h-40 w-40" />
           </div>
-          <CardHeader className="pb-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-emerald-100 rounded-lg">
-                <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+          
+          <div className="relative z-10 flex flex-col h-full space-y-6">
+            <div className="space-y-2">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-emerald-100 rounded-xl shadow-sm">
+                  <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                </div>
+                <h2 className="text-2xl font-black text-slate-800 tracking-tight">Active Learning Tracks</h2>
               </div>
-              <CardTitle className="text-xl font-bold text-slate-800">Your Learning Tracks</CardTitle>
+              <p className="text-sm font-semibold text-slate-400 uppercase tracking-widest pl-12">Current Enrollments</p>
             </div>
-            <p className="text-sm text-muted-foreground">Batches you are currently enrolled in</p>
-          </CardHeader>
-          <CardContent>
-            {userBatches.length > 0 ? (
-              <div className="flex flex-wrap gap-2 relative z-10">
-                {userBatches.map(batch => (
-                  <Badge key={batch.id} variant="secondary" className="px-4 py-1.5 text-xs font-bold uppercase tracking-widest bg-emerald-50 text-emerald-700 border-emerald-100/50 hover:bg-emerald-100 transition-colors">
-                    {batch.name}
-                  </Badge>
-                ))}
-              </div>
-            ) : (
-              <div className="py-2 text-sm text-slate-400 italic">No active enrollments yet.</div>
-            )}
-          </CardContent>
-        </Card>
+
+            <div className="pl-12">
+              {userBatches.length > 0 ? (
+                <div className="flex flex-wrap gap-3">
+                  {userBatches.map(batch => (
+                    <div key={batch.id} className="px-5 py-2.5 rounded-xl bg-slate-50 border border-slate-100/50 text-xs font-black text-slate-600 uppercase tracking-widest hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 transition-all cursor-default shadow-sm">
+                      {batch.name}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="py-4 text-sm text-slate-400 font-medium italic">No active enrollments detected yet.</div>
+              )}
+            </div>
+          </div>
+        </div>
 
         {/* Join New Batch - Right 5 columns */}
         {batches.length > 0 ? (
-          <Card className="md:col-span-5 bg-gradient-to-br from-primary to-primary-glow border-0 shadow-xl shadow-primary/20 rounded-3xl text-white overflow-hidden relative">
-            <div className="absolute top-[-20px] right-[-20px] w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
-            <CardHeader className="pb-4">
-              <CardTitle className="text-xl font-bold flex items-center gap-2">
-                Join a Batch
-              </CardTitle>
-              <p className="text-primary-foreground/80 text-xs">
-                Enroll in a new track to unlock tests and assignments.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex flex-col gap-3">
+          <div className="md:col-span-5 glass-card rounded-[2.5rem] p-8 border-primary/20 relative overflow-hidden group transition-all duration-500 hover:shadow-primary/10">
+            {/* Subtle glow effect */}
+            <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full blur-3xl -mr-16 -mt-16 group-hover:bg-primary/20 transition-all duration-1000"></div>
+            
+            <div className="relative z-10 space-y-6">
+              <div className="space-y-1.5">
+                <h2 className="text-2xl font-black text-primary tracking-tight flex items-center gap-2.5">
+                  <div className="p-2 bg-primary/10 rounded-xl">
+                    <Sparkles className="h-5 w-5 text-primary" />
+                  </div>
+                  Join a Track
+                </h2>
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest pl-12">
+                  Unlock new assessments
+                </p>
+              </div>
+
+              <div className="pl-12 space-y-4">
                 <Select value={selectedBatchId} onValueChange={setSelectedBatchId}>
-                  <SelectTrigger className="bg-white/10 border-white/20 text-white placeholder:text-white/60 focus:ring-white/30 rounded-xl py-6">
-                    <SelectValue placeholder="Browse available tracks..." />
+                  <SelectTrigger className="h-14 bg-slate-50/50 border-slate-200/50 rounded-2xl text-slate-700 font-bold focus:ring-primary/20 hover:bg-white transition-all">
+                    <SelectValue placeholder="Browse modules..." />
                   </SelectTrigger>
-                  <SelectContent className="rounded-xl border-slate-200 shadow-2xl">
+                  <SelectContent className="rounded-2xl border-slate-100 shadow-premium p-1.5">
                     {batches.map((batch) => (
-                      <SelectItem key={batch.id} value={batch.id} className="focus:bg-primary/10 focus:text-primary rounded-lg my-1">
+                      <SelectItem key={batch.id} value={batch.id} className="rounded-xl font-semibold my-1 focus:bg-primary/5 focus:text-primary transition-colors">
                         {batch.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+
                 <Button
                   onClick={handleJoinBatch}
                   disabled={!selectedBatchId || joining}
-                  className="bg-white text-primary hover:bg-slate-50 shadow-lg transition-all rounded-xl py-6 font-bold uppercase tracking-widest text-xs"
+                  className="w-full h-14 btn-premium text-white shadow-primary rounded-2xl font-black uppercase tracking-[0.2em] text-[10px] transition-all active:scale-[0.98]"
                 >
                   {joining ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : "Confirm Enrollment"}
                 </Button>
               </div>
-            </CardContent>
-          </Card>
-        ) : (
-          <Card className="md:col-span-5 bg-slate-50 border-dashed border-2 border-slate-200 rounded-3xl flex items-center justify-center p-8">
-            <div className="text-center">
-              <p className="text-slate-400 text-sm font-medium">All available batches joined</p>
-              <p className="text-[10px] text-slate-300 uppercase tracking-widest mt-1">Check back for new tracks</p>
             </div>
-          </Card>
+          </div>
+        ) : (
+          <div className="md:col-span-5 bg-slate-100/30 border-2 border-dashed border-slate-200/50 rounded-[2.5rem] flex items-center justify-center p-8 transition-colors hover:bg-slate-100/50">
+            <div className="text-center space-y-2">
+              <div className="inline-flex p-3 bg-slate-100 rounded-full mb-2">
+                <Users className="h-6 w-6 text-slate-400" />
+              </div>
+              <p className="text-slate-500 font-bold text-sm tracking-tight">Full Visibility Achieved</p>
+              <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest">All modules are currently active</p>
+            </div>
+          </div>
         )}
       </div>
     </div>

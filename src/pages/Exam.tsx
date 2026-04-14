@@ -273,11 +273,6 @@ const Exam = () => {
       setIsOnline(false);
       toast({
         title: "Connection Lost",
-        description: "You've gone offline. Don't worry — your progress is saved locally.",
-        variant: "destructive",
-      });
-    };
-
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     return () => {
@@ -292,72 +287,26 @@ const Exam = () => {
       navigate('/dashboard');
       return;
     }
+  const initExamSession = useCallback(async () => {
+    if (!examId) {
+      navigate('/dashboard');
+      return;
+    }
 
     try {
-      setLoadingMessage('Authenticating...');
+      setLoadingMessage('Authenticating Account...');
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         navigate('/');
         return;
       }
 
-      setLoadingMessage('Connecting to exam server...');
+      let attemptPayload = null;
+      let wasResumed = false;
 
-      // Call the start-attempt edge function
-      const { data, error } = await supabase.functions.invoke('start-attempt', {
-        body: { test_id: examId }
-      });
-
-      // Handle edge function HTTP errors
-      if (error) {
-        console.error('Edge function error:', error);
-        throw { message: error.message || 'Failed to reach the exam server.', code: 'NETWORK_ERROR' };
-      }
-
-      // Handle response-level errors
-      if (!data.success) {
-        console.log('Start-attempt returned:', data);
-
-        // Specific error handling
-        if (data.error_code === 'ALREADY_SUBMITTED') {
-          setAttemptData(data.data);
-          setSessionError(data.message);
-          setSessionErrorCode('ALREADY_SUBMITTED');
-          setLoading(false);
-          return;
-        }
-
-        if (data.error_code === 'ATTEMPT_EXPIRED') {
-          setAttemptData(data.data);
-          setSessionError(data.message);
-          setSessionErrorCode('ATTEMPT_EXPIRED');
-          setLoading(false);
-          return;
-        }
-
-        throw { message: data.message || 'Unknown error from exam server.', code: data.error_code || 'UNKNOWN' };
-      }
-
-      // Success! We have an attempt.
-      const attemptPayload = data.data;
-      const wasResumed = data.resumed === true;
-
-      if (wasResumed) {
-        setIsResuming(true);
-        setLoadingMessage('Restoring your session...');
-        toast({
-          title: "Session Resumed",
-          description: data.message || "Welcome back! Your progress has been restored.",
-        });
-      } else {
-        setLoadingMessage('Preparing exam environment...');
-      }
-
-      setAttempt(attemptPayload);
-
-      // Fetch test details and questions
-      setLoadingMessage('Loading questions...');
-      const { data: testData } = await supabase
+      // 1. Fetch test metadata first
+      setLoadingMessage('Fetching assessment data...');
+      const { data: testData, error: testError } = await supabase
         .from('tests')
         .select(`
           *,
@@ -370,21 +319,126 @@ const Exam = () => {
         .eq('id', examId)
         .single();
 
-      if (testData) {
-        setTest(testData);
+      if (testError || !testData) {
+        throw { message: 'Test metadata not found. Please contact support.', code: 'NOT_FOUND' };
+      }
+      setTest(testData);
+
+      setLoadingMessage('Initializing assessment engine...');
+
+      try {
+        // Attempt Edge Function Invocation (Production Protocol)
+        const { data, error } = await supabase.functions.invoke('start-attempt', {
+          body: { test_id: examId }
+        });
+
+        if (error) throw error;
+
+        if (!data.success) {
+          if (data.error_code === 'ALREADY_SUBMITTED') {
+            setAttemptData(data.data);
+            setSessionError(data.message);
+            setSessionErrorCode('ALREADY_SUBMITTED');
+            setLoading(false);
+            return;
+          }
+          if (data.error_code === 'ATTEMPT_EXPIRED') {
+            setAttemptData(data.data);
+            setSessionError(data.message);
+            setSessionErrorCode('ATTEMPT_EXPIRED');
+            setLoading(false);
+            return;
+          }
+          throw { message: data.message || 'Engine error', code: data.error_code };
+        }
+
+        attemptPayload = data.data;
+        wasResumed = data.resumed === true;
+      } catch (invokeError) {
+        console.warn('Edge engine unreachable, initiating database fallback...', invokeError);
+        
+        // 2. Database Fallback (Development/Localhost Protocol)
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error("Security handshake failed.");
+
+        const { data: existing } = await supabase
+          .from('attempts')
+          .select('*')
+          .eq('test_id', examId)
+          .eq('user_id', user.id)
+          .eq('status', 'active')
+          .maybeSingle();
+
+        if (existing) {
+          attemptPayload = existing;
+          wasResumed = true;
+        } else {
+          // Verify submission limits
+          const { data: submitted } = await supabase
+            .from('attempts')
+            .select('*')
+            .eq('test_id', examId)
+            .eq('user_id', user.id)
+            .in('status', ['submitted', 'auto_submitted'])
+            .maybeSingle();
+
+          if (submitted) {
+            setAttemptData(submitted);
+            setSessionError("Assessment protocol already finalized for this session.");
+            setSessionErrorCode('ALREADY_SUBMITTED');
+            setLoading(false);
+            return;
+          }
+
+          const now = new Date();
+          const durationMins = testData.time_limit_minutes || 60;
+          const endsAt = new Date(now.getTime() + durationMins * 60 * 1000);
+
+          const { data: newAttempt, error: createError } = await supabase
+            .from('attempts')
+            .insert({
+              test_id: examId,
+              user_id: user.id,
+              status: 'active',
+              started_at: now.toISOString(),
+              ends_at: endsAt.toISOString(),
+              score: 0
+            })
+            .select()
+            .single();
+
+          if (createError) throw createError;
+          attemptPayload = newAttempt;
+        }
+      }
+
+      // 3. Finalize Initialization
+      if (wasResumed) {
+        setIsResuming(true);
+        setLoadingMessage('Restoring session state...');
+        toast({
+          title: "Session Resumed",
+          description: "Assessment state restored to last known sync point.",
+        });
+      } else {
+        setLoadingMessage('Priming validation environment...');
+      }
+
+      setAttempt(attemptPayload);
+
+      if (testData.test_questions) {
         const sortedQuestions = testData.test_questions
           .sort((a: any, b: any) => a.order_index - b.order_index)
           .map((tq: any) => tq.questions);
         setQuestions(sortedQuestions);
       }
 
-      // Clear any previous errors
       setSessionError(null);
       setSessionErrorCode('');
 
     } catch (err: any) {
-      console.error('Error initializing exam session:', err);
-      setSessionError(err.message || 'Failed to start exam session.');
+      console.error('Critical initialization failure:', err);
+      setSessionError(err.message || 'Engine failed to initialize.');
       setSessionErrorCode(err.code || 'UNKNOWN');
     } finally {
       setLoading(false);

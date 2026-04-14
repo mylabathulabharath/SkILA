@@ -213,127 +213,138 @@ export const LearningAnalytics = () => {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-foreground">Learning Analytics</h2>
-        <Badge variant="outline" className="flex items-center gap-2">
-          <Activity className="h-3 w-3" />
-          Real-time
-        </Badge>
+    <div className="space-y-12 animate-in fade-in duration-1000">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+        <div className="space-y-2">
+          <h2 className="text-4xl font-black text-slate-900 tracking-tight flex items-center gap-3">
+            Institutional <span className="text-gradient">Analytics</span>
+            <div className="relative flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-20"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-primary"></span>
+            </div>
+          </h2>
+          <p className="text-sm font-medium text-slate-500">Global performance benchmarks and cognitive mapping.</p>
+        </div>
+        <div className="flex gap-4">
+          <Badge className="bg-slate-900 text-white border-none px-5 py-2 rounded-xl text-[10px] font-black tracking-widest uppercase">Cloud Managed</Badge>
+          <Badge variant="outline" className="border-slate-200 px-5 py-2 rounded-xl text-[10px] font-black tracking-widest uppercase text-slate-400">Sync: Real-time</Badge>
+        </div>
       </div>
 
-      {/* Key Metrics */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Total Assessments</p>
-                <p className="text-2xl font-bold">{stats?.totalAssessments || 0}</p>
+      {/* Primary Intelligence Metrics */}
+      <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-4">
+        {[
+          { label: "Active Validation Tracks", value: stats?.totalAssessments || 0, icon: Target, color: "text-primary", bg: "bg-primary/5" },
+          { label: "Aggregate Performance", value: `${Math.round(stats?.averageScore || 0)}%`, icon: TrendingUp, color: "text-emerald-500", bg: "bg-emerald-50" },
+          { label: "Engagement Velocity", value: `${Math.round((stats?.totalTimeSpent || 0) / 60)}h`, icon: Clock, color: "text-blue-500", bg: "bg-blue-50" },
+          { label: "Cognitive Streak", value: `${stats?.streak || 0}d`, icon: Award, color: "text-amber-500", bg: "bg-amber-50" }
+        ].map((metric, i) => (
+          <div key={i} className={`glass-card p-8 rounded-[2.5rem] border border-slate-100 shadow-premium-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-500 animate-reveal stagger-${i+1}`}>
+            <div className="flex flex-col gap-6">
+              <div className={`p-4 rounded-2xl ${metric.bg} ${metric.color} w-fit`}>
+                <metric.icon className="h-6 w-6" />
               </div>
-              <Target className="h-8 w-8 text-primary" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Average Score</p>
-                <p className="text-2xl font-bold">{Math.round(stats?.averageScore || 0)}%</p>
+              <div className="space-y-1">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{metric.label}</p>
+                <p className="text-4xl font-black text-slate-900 tracking-tighter">{metric.value}</p>
               </div>
-              <TrendingUp className="h-8 w-8 text-green-500" />
             </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Time Spent</p>
-                <p className="text-2xl font-bold">{Math.round((stats?.totalTimeSpent || 0) / 60)}h</p>
-              </div>
-              <Clock className="h-8 w-8 text-blue-500" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Learning Streak</p>
-                <p className="text-2xl font-bold">{stats?.streak || 0} days</p>
-              </div>
-              <Award className="h-8 w-8 text-yellow-500" />
-            </div>
-          </CardContent>
-        </Card>
+          </div>
+        ))}
       </div>
 
-      {/* Detailed Analytics */}
-      <Tabs defaultValue="overview" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="languages">Languages</TabsTrigger>
-          <TabsTrigger value="trends">Trends</TabsTrigger>
-        </TabsList>
+      {/* Detailed Analytics Architecture */}
+      <Tabs defaultValue="overview" className="space-y-8">
+        <div className="flex items-center justify-center md:justify-start bg-slate-50 p-1.5 rounded-2xl w-fit border border-slate-100">
+          <TabsList className="bg-transparent h-auto p-0 gap-1">
+            {['overview', 'languages', 'trends'].map((t) => (
+              <TabsTrigger 
+                key={t} 
+                value={t} 
+                className="data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-md rounded-xl px-6 py-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500 transition-all"
+              >
+                {t}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
 
-        <TabsContent value="overview" className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Brain className="h-5 w-5" />
-                  Learning Progress
-                </CardTitle>
+        <TabsContent value="overview" className="space-y-8 outline-none border-none">
+          <div className="grid gap-8 md:grid-cols-2">
+            <Card className="glass-card border-none rounded-[3rem] shadow-premium-sm p-10">
+              <CardHeader className="p-0 mb-8 border-b border-slate-50 pb-6">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-3">
+                    <Brain className="h-6 w-6 text-primary" />
+                    Cognitive Growth
+                  </CardTitle>
+                  <Activity className="h-5 w-5 text-slate-200" />
+                </div>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <div className="flex justify-between text-sm mb-2">
-                    <span>Accuracy</span>
-                    <span>{Math.round(stats?.accuracy || 0)}%</span>
+              <CardContent className="p-0 space-y-10">
+                <div className="space-y-4">
+                  <div className="flex justify-between items-end">
+                    <div>
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Validation Accuracy</span>
+                      <p className="text-2xl font-black text-slate-800 tracking-tighter">{Math.round(stats?.accuracy || 0)}%</p>
+                    </div>
                   </div>
-                  <Progress value={stats?.accuracy || 0} className="h-2" />
+                  <Progress value={stats?.accuracy || 0} className="h-3 bg-slate-50 rounded-full" />
                 </div>
                 
-                <div>
-                  <div className="flex justify-between text-sm mb-2">
-                    <span>Improvement Rate</span>
-                    <span className={stats?.improvementRate && stats.improvementRate > 0 ? "text-green-500" : "text-red-500"}>
-                      {stats?.improvementRate && stats.improvementRate > 0 ? "+" : ""}{Math.round(stats?.improvementRate || 0)}%
-                    </span>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-end">
+                    <div>
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Institutional Improvement</span>
+                      <p className={`text-2xl font-black tracking-tighter ${stats?.improvementRate && stats.improvementRate > 0 ? "text-emerald-500" : "text-rose-500"}`}>
+                        {stats?.improvementRate && stats.improvementRate > 0 ? "+" : ""}{Math.round(stats?.improvementRate || 0)}%
+                      </p>
+                    </div>
                   </div>
                   <Progress 
                     value={Math.abs(stats?.improvementRate || 0)} 
-                    className="h-2" 
+                    className={`h-3 bg-slate-50 rounded-full ${stats?.improvementRate && stats.improvementRate > 0 ? "[&>div]:bg-emerald-500" : "[&>div]:bg-rose-500"}`} 
                   />
+                  <p className="text-[10px] font-medium text-slate-400 italic">Benchmarks updated dynamically based on campus averages.</p>
                 </div>
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Code className="h-5 w-5" />
-                  Language Skills
+            <Card className="glass-card border-none rounded-[3rem] shadow-premium-sm p-10">
+              <CardHeader className="p-0 mb-8 border-b border-slate-50 pb-6">
+                <CardTitle className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-3">
+                  <Code className="h-6 w-6 text-primary" />
+                  Language Proficiency
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <p className="text-sm text-muted-foreground mb-2">Strongest Language</p>
-                  <Badge variant="default" className="text-sm">
-                    {stats?.strongestLanguage || 'None'}
-                  </Badge>
+              <CardContent className="p-0 space-y-10">
+                <div className="grid grid-cols-2 gap-8">
+                  <div className="space-y-3">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Primary Domain</p>
+                    <div className="bg-primary/5 border border-primary/10 rounded-2xl p-6 text-center group hover:bg-primary transition-all duration-500">
+                      <span className="text-xl font-black text-primary group-hover:text-white uppercase tracking-widest">{stats?.strongestLanguage || 'N/A'}</span>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Focus Requirement</p>
+                    <div className="bg-rose-50 border border-rose-100 rounded-2xl p-6 text-center group hover:bg-rose-100 transition-all duration-500">
+                      <span className="text-xl font-black text-rose-500 uppercase tracking-widest">{stats?.weakestLanguage || 'N/A'}</span>
+                    </div>
+                  </div>
                 </div>
-                
-                <div>
-                  <p className="text-sm text-muted-foreground mb-2">Focus Area</p>
-                  <Badge variant="destructive" className="text-sm">
-                    {stats?.weakestLanguage || 'None'}
-                  </Badge>
+
+                <div className="p-6 rounded-[2rem] bg-slate-900 text-white relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-primary group-hover:bg-primary-glow transition-colors opacity-10 blur-2xl -mr-16 -mt-16"></div>
+                  <div className="flex items-center gap-4 relative z-10">
+                    <div className="p-3 bg-white/10 rounded-xl">
+                      <BarChart3 className="h-5 w-5 text-primary-glow" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-white/40 uppercase tracking-widest">Global Status</p>
+                      <p className="text-sm font-bold uppercase tracking-widest">Skill Set Validated</p>
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>

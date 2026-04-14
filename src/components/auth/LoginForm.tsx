@@ -55,44 +55,48 @@ export const LoginForm = () => {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="space-y-4">
+      <div className="space-y-5">
         <div className="space-y-2">
-          <Label htmlFor="email" className="text-sm font-medium text-foreground">
-            Email Address
+          <Label htmlFor="email" className="text-[10px] font-black uppercase tracking-widest text-slate-400 pl-1">
+            Institutional Email
           </Label>
-          <div className="relative">
-            <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <div className="relative group">
+            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+              <Mail className="h-4 w-4 text-slate-300 group-focus-within:text-primary transition-colors" />
+            </div>
             <Input
               id="email"
               type="email"
-              placeholder="Enter your email"
+              placeholder="e.g. candidate@skila.ai"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="pl-10 transition-smooth focus:ring-primary/50"
+              className="h-14 pl-12 bg-white/50 border-slate-200/50 rounded-2xl font-bold text-slate-700 placeholder:text-slate-300 focus:bg-white focus:border-primary/30 transition-all duration-300 shadow-sm"
               required
             />
           </div>
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="password" className="text-sm font-medium text-foreground">
-            Password
+          <Label htmlFor="password" className="text-[10px] font-black uppercase tracking-widest text-slate-400 pl-1">
+            Access Password
           </Label>
-          <div className="relative">
-            <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <div className="relative group">
+            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+              <Lock className="h-4 w-4 text-slate-300 group-focus-within:text-primary transition-colors" />
+            </div>
             <Input
               id="password"
               type={showPassword ? "text" : "password"}
-              placeholder="Enter your password"
+              placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="pl-10 pr-10 transition-smooth focus:ring-primary/50"
+              className="h-14 pl-12 pr-12 bg-white/50 border-slate-200/50 rounded-2xl font-bold text-slate-700 placeholder:text-slate-300 focus:bg-white focus:border-primary/30 transition-all duration-300 shadow-sm"
               required
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground transition-smooth"
+              className="absolute right-4 top-1/2 transform -translate-y-1/2 text-slate-300 hover:text-primary transition-all p-1.5 rounded-lg hover:bg-slate-50"
             >
               {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </button>
@@ -100,23 +104,21 @@ export const LoginForm = () => {
         </div>
       </div>
 
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-end px-1">
         <a
           href="#"
-          className="text-sm text-primary hover:underline font-medium transition-smooth"
+          className="text-[10px] font-black text-primary/60 hover:text-primary uppercase tracking-[0.1em] transition-all"
         >
-          Forgot Password?
+          Recovery Center
         </a>
       </div>
 
       <Button
         type="submit"
-        variant="auth"
-        size="lg"
-        className="w-full"
+        className="w-full h-15 btn-premium text-white shadow-primary rounded-2xl font-black uppercase tracking-[0.2em] text-[10px] py-6 active:scale-[0.98] transition-all"
         disabled={isLoading}
       >
-        {isLoading ? "Signing In..." : "Login to SkILA"}
+        {isLoading ? "Authenticating..." : "Authorize Portal Access"}
       </Button>
 
       <SocialLoginButtons />

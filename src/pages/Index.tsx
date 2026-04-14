@@ -1,25 +1,15 @@
 import { AuthCard } from "@/components/auth/AuthCard";
-import authBackground from "@/assets/auth-background.jpg";
 
 const Index = () => {
   return (
-    <div 
-      className="min-h-screen flex items-center justify-center bg-auth-gradient relative overflow-hidden"
-      style={{
-        backgroundImage: `url(${authBackground})`,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        backgroundBlendMode: 'soft-light'
-      }}
-    >
-      {/* Overlay for better readability */}
-      <div className="absolute inset-0 bg-auth-gradient opacity-80" />
-      
-      {/* Floating geometric elements */}
-      <div className="absolute top-20 left-10 w-20 h-20 border border-white/20 rounded-full animate-float" style={{ animationDelay: '0s' }} />
-      <div className="absolute top-40 right-16 w-12 h-12 border border-white/20 rounded-lg rotate-45 animate-float" style={{ animationDelay: '2s' }} />
-      <div className="absolute bottom-32 left-20 w-16 h-16 border border-white/20 rounded-full animate-float" style={{ animationDelay: '4s' }} />
-      <div className="absolute bottom-20 right-32 w-8 h-8 bg-white/10 rounded-full animate-float" style={{ animationDelay: '1s' }} />
+    <div className="min-h-screen w-full flex items-center justify-center bg-background relative overflow-hidden">
+      {/* Premium Mesh Background */}
+      <div className="absolute inset-0 z-0">
+        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/10 rounded-full blur-[120px] animate-pulse"></div>
+        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-secondary/10 rounded-full blur-[120px] animate-pulse" style={{ animationDelay: '2s' }}></div>
+        <div className="absolute top-[20%] right-[10%] w-[30%] h-[30%] bg-primary-glow/5 rounded-full blur-[100px]"></div>
+        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03] mix-blend-overlay"></div>
+      </div>
       
       {/* Main content */}
       <div className="relative z-10 w-full max-w-md mx-auto px-4">

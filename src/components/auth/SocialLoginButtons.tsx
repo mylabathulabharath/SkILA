@@ -89,39 +89,40 @@ export const SocialLoginButtons = () => {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="relative">
         <div className="absolute inset-0 flex items-center">
-          <Separator className="w-full" />
+          <div className="w-full border-t border-slate-100"></div>
         </div>
-        <div className="relative flex justify-center text-xs uppercase">
-          <span className="bg-card px-2 text-muted-foreground">
-            Or continue with
+        <div className="relative flex justify-center text-[8px] uppercase tracking-[0.4em] font-black text-slate-300">
+          <span className="bg-white px-6">
+            Cloud Identity
           </span>
         </div>
       </div>
 
-      <div className="grid gap-3">
+      <div className="flex justify-center gap-4">
         {(
           ["google", "github", "facebook"] as OAuthProvider[]
         ).map((provider) => {
           const config = PROVIDER_CONFIG[provider];
           return (
-            <Button
+            <button
               key={provider}
               type="button"
-              variant="outline"
-              className={`w-full ${config.className}`}
+              className="flex items-center justify-center w-14 h-14 rounded-2xl bg-white border border-slate-100 shadow-sm hover:shadow-md hover:border-primary/20 hover:-translate-y-1 transition-all duration-300 group active:scale-95"
               onClick={() => handleOAuthSignIn(provider)}
               disabled={loadingProvider !== null}
+              title={config.label}
             >
               {loadingProvider === provider ? (
-                <span className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                <span className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
               ) : (
-                config.icon
+                <div className="group-hover:scale-110 transition-transform">
+                  {config.icon}
+                </div>
               )}
-              <span className="ml-2">{config.label}</span>
-            </Button>
+            </button>
           );
         })}
       </div>

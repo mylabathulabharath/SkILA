@@ -85,59 +85,66 @@ export const AuthCard = () => {
   }, [navigate]);
 
   return (
-    <div className="w-full max-w-md mx-auto animate-float">
-      <Card className="shadow-card bg-card-gradient border-0 backdrop-blur-sm">
-        <CardHeader className="text-center pb-8">
-          <div className="flex items-center justify-center gap-3 mb-4">
-            <div className="relative">
-              <Brain className="h-8 w-8 text-primary" />
-              <GraduationCap className="h-5 w-5 text-secondary absolute -top-1 -right-1" />
+    <div className="w-full max-w-md mx-auto relative group">
+      {/* Decorative accent behind card */}
+      <div className="absolute -inset-1 bg-gradient-to-r from-primary/20 to-secondary/20 rounded-[2.5rem] blur opacity-25 group-hover:opacity-50 transition duration-1000 group-hover:duration-200"></div>
+      
+      <Card className="glass-card rounded-[2.5rem] border-0 relative overflow-hidden backdrop-blur-3xl">
+        <CardHeader className="text-center pt-10 pb-8 px-8">
+          <div className="flex items-center justify-center gap-3 mb-6">
+            <div className="relative p-4 bg-primary/5 rounded-2xl border border-primary/10 shadow-sm animate-pulse">
+              <Brain className="h-9 w-9 text-primary" />
+              <div className="absolute -top-1 -right-1 p-1 bg-secondary rounded-lg shadow-sm">
+                <GraduationCap className="h-4 w-4 text-white" />
+              </div>
             </div>
           </div>
-          <h1 className="text-2xl font-bold text-gradient">
-            AI-Powered Exam Portal
-          </h1>
-          <p className="text-muted-foreground font-medium">
-            Student Access Gateway
-          </p>
+          <div className="space-y-2">
+            <h1 className="text-3xl font-black text-slate-900 tracking-tight">
+              SkILA <span className="text-gradient">Portal</span>
+            </h1>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">
+              Intelligence Gateway
+            </p>
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-50/50 border border-emerald-100 rounded-xl">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
+                <span className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Secure Proctoring Active</span>
+            </div>
+          </div>
         </CardHeader>
         
-        <CardContent className="pt-0">
+        <CardContent className="px-8 pb-10">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-2 mb-8 bg-subtle-gradient">
+            <TabsList className="grid w-full grid-cols-2 mb-8 h-14 bg-slate-100/50 p-1.5 rounded-[1.25rem] border border-slate-200/50">
               <TabsTrigger 
                 value="login" 
-                className="font-medium data-[state=active]:bg-white data-[state=active]:shadow-sm"
+                className="rounded-xl font-bold text-sm data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all duration-300"
               >
-                Login
+                Sign In
               </TabsTrigger>
               <TabsTrigger 
                 value="register"
-                className="font-medium data-[state=active]:bg-white data-[state=active]:shadow-sm"
+                className="rounded-xl font-bold text-sm data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all duration-300"
               >
-                Register
+                Create Account
               </TabsTrigger>
             </TabsList>
             
-            <TabsContent value="login" className="mt-0">
-              <LoginForm />
-            </TabsContent>
-            
-            <TabsContent value="register" className="mt-0">
-              <RegisterForm />
-            </TabsContent>
+            <div className="relative">
+              <TabsContent value="login" className="mt-0 animate-in fade-in slide-in-from-left-4 duration-500">
+                <LoginForm />
+              </TabsContent>
+              
+              <TabsContent value="register" className="mt-0 animate-in fade-in slide-in-from-right-4 duration-500">
+                <RegisterForm />
+              </TabsContent>
+            </div>
           </Tabs>
           
-          <div className="mt-8 pt-6 border-t border-border text-center">
-            <p className="text-xs text-muted-foreground">
-              By signing up, you agree to the{" "}
-              <a href="#" className="text-primary hover:underline font-medium">
-                Terms of Service
-              </a>{" "}
-              &{" "}
-              <a href="#" className="text-primary hover:underline font-medium">
-                Privacy Policy
-              </a>
+          <div className="mt-12 pt-8 border-t border-slate-100">
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed text-center">
+              By continuing, you agree to our <br />
+              <a href="#" className="text-primary hover:underline transition-colors mt-1 inline-block">Terms & Privacy Policy</a>
             </p>
           </div>
         </CardContent>

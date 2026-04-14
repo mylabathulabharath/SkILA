@@ -7,7 +7,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Clock, CheckCircle, XCircle, ArrowLeft, ArrowRight } from "lucide-react";
+import { Clock, CheckCircle, XCircle, ArrowLeft, ArrowRight, LayoutDashboard } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 interface McqQuestion {
@@ -517,68 +517,49 @@ const McqTest = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur">
-        <div className="container flex h-16 items-center justify-between px-4">
-          <div className="flex items-center gap-3">
-            <h1 className="text-lg font-semibold">{test.title}</h1>
-            {isSubmitted && (
-              <Badge>
-                <CheckCircle className="h-3 w-3 mr-1" />
-                Submitted
-              </Badge>
-            )}
+    <div className="min-h-screen bg-slate-50 flex flex-col">
+      {/* Header - Institutional Grade */}
+      <header className="sticky top-0 z-[100] w-full border-b border-slate-200 bg-white/80 backdrop-blur-xl">
+        <div className="container mx-auto flex h-20 items-center justify-between px-6 lg:px-12">
+          <div className="flex items-center gap-4">
+             <div className="p-2.5 bg-primary/10 rounded-xl">
+                <Badge variant="outline" className="border-primary/20 text-primary font-black uppercase tracking-widest text-[10px]">MCQ Assessment</Badge>
+             </div>
+             <div className="h-6 w-px bg-slate-200 hidden sm:block" />
+             <h1 className="text-xl font-black text-slate-800 tracking-tight">{test.title}</h1>
           </div>
 
-          <div className="flex items-center gap-4">
-            {/* Question Navigation */}
-            {!isSubmitted && questions.length > 1 && (
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Question:</span>
-                <div className="flex gap-1 flex-wrap max-w-md">
-                  {questions.map((q, i) => (
-                    <button
-                      key={q.id}
-                      onClick={() => setCurrentQuestionIndex(i)}
-                      className={`w-8 h-8 rounded-md text-sm font-medium transition-colors ${i === currentQuestionIndex
-                        ? 'bg-primary text-primary-foreground'
-                        : responses[q.id]
-                          ? 'bg-blue-500 text-white'
-                          : 'bg-muted text-muted-foreground hover:bg-muted/80'
-                        }`}
-                    >
-                      {i + 1}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className={`flex items-center gap-2 font-mono text-lg font-semibold ${timeLeft <= 300 ? 'text-destructive' : 'text-foreground'
-              }`}>
-              <Clock className="h-5 w-5" />
-              {formatTime(timeLeft)}
+          <div className="flex items-center gap-8">
+            <div className={`flex items-center gap-3 px-6 py-2.5 rounded-2xl border transition-all duration-500 ${
+              timeLeft <= 300 
+              ? 'bg-rose-50 border-rose-200 text-rose-600 animate-pulse' 
+              : 'bg-slate-900 border-slate-800 text-white shadow-lg'
+            }`}>
+              <Clock className={`h-5 w-5 ${timeLeft <= 300 ? 'text-rose-500' : 'text-primary-glow'}`} />
+              <span className="font-mono text-xl font-black tracking-tighter">{formatTime(timeLeft)}</span>
             </div>
 
-            {!isSubmitted && timeLeft > 0 && (
+            {!isSubmitted && (
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button variant={timeLeft <= 300 ? "destructive" : "default"}>
-                    Submit Test
+                  <Button className="btn-premium px-8 py-6 rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-primary hover:scale-105 transition-all">
+                    Finish Assessment
                   </Button>
                 </AlertDialogTrigger>
-                <AlertDialogContent>
+                <AlertDialogContent className="rounded-[2.5rem] border-none shadow-2xl">
                   <AlertDialogHeader>
-                    <AlertDialogTitle>Submit Test</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      Are you sure you want to submit your test? This action cannot be undone.
+                    <AlertDialogTitle className="text-3xl font-black text-slate-900 tracking-tighter">Submit Validation?</AlertDialogTitle>
+                    <AlertDialogDescription className="text-slate-500 font-medium">
+                      Ensure you have reviewed all items. Once submitted, your cognitive profile will be updated and results finalized.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={() => handleSubmitTest(false)}>
-                      Submit Test
+                  <AlertDialogFooter className="gap-3">
+                    <AlertDialogCancel className="rounded-xl border-slate-200 font-bold">Review More</AlertDialogCancel>
+                    <AlertDialogAction 
+                       onClick={() => handleSubmitTest(false)} 
+                       className="rounded-xl bg-primary hover:bg-primary-glow text-white font-black uppercase tracking-widest text-[10px] py-4"
+                    >
+                      Process Final Submission
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
@@ -588,64 +569,158 @@ const McqTest = () => {
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="container mx-auto px-4 py-8 max-w-4xl">
-        {currentQuestion && (
-          <Card className="bg-card-gradient shadow-card">
-            <CardHeader>
+      {/* Main Layout Engine */}
+      <div className="flex-1 container mx-auto px-6 lg:px-12 py-10 flex flex-col lg:flex-row gap-10">
+        
+        {/* Left: Question Engine */}
+        <main className="flex-1 max-w-4xl space-y-8 animate-reveal">
+          {currentQuestion && (
+            <div className="space-y-8">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-xl">
-                  Question {currentQuestionIndex + 1} of {questions.length}
-                </CardTitle>
-                <Badge variant="outline">{currentQuestion.marks} marks</Badge>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="text-lg">
-                {currentQuestion.question_text}
+                <div>
+                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Validation Track</span>
+                   <h2 className="text-3xl font-black text-slate-900 tracking-tighter">Question {currentQuestionIndex + 1}</h2>
+                </div>
+                <div className="flex gap-3">
+                   <Badge className="bg-primary/5 text-primary border-primary/10 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest">
+                     {currentQuestion.marks} Marks
+                   </Badge>
+                   {currentQuestion.negative_marks > 0 && (
+                     <Badge variant="destructive" className="bg-rose-50 text-rose-600 border-rose-100 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest">
+                        -{currentQuestion.negative_marks} Penalty
+                     </Badge>
+                   )}
+                </div>
               </div>
 
-              <RadioGroup
-                value={currentResponse}
-                onValueChange={(value) => handleAnswerChange(currentQuestion.id, value)}
-                disabled={isSubmitted}
-              >
-                {currentQuestion.options.map((option) => (
-                  <div key={option.id} className="flex items-center space-x-2 p-3 rounded-lg border hover:bg-muted/50">
-                    <RadioGroupItem value={option.id} id={option.id} />
-                    <Label
-                      htmlFor={option.id}
-                      className="flex-1 cursor-pointer text-base"
-                    >
-                      {option.option_text}
-                    </Label>
+              <Card className="glass-card border-none rounded-[3.5rem] shadow-premium-sm p-10 lg:p-14 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full blur-3xl -mr-32 -mt-32"></div>
+                
+                <CardContent className="p-0 space-y-12 relative z-10">
+                  <div className="text-2xl font-bold text-slate-800 leading-relaxed tracking-tight">
+                    {currentQuestion.question_text}
                   </div>
-                ))}
-              </RadioGroup>
 
-              {/* Navigation */}
-              <div className="flex justify-between pt-4 border-t">
-                <Button
-                  variant="outline"
-                  onClick={() => setCurrentQuestionIndex(Math.max(0, currentQuestionIndex - 1))}
-                  disabled={currentQuestionIndex === 0 || isSubmitted}
-                >
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  Previous
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => setCurrentQuestionIndex(Math.min(questions.length - 1, currentQuestionIndex + 1))}
-                  disabled={currentQuestionIndex === questions.length - 1 || isSubmitted}
-                >
-                  Next
-                  <ArrowRight className="h-4 w-4 ml-2" />
-                </Button>
+                  <RadioGroup
+                    value={currentResponse}
+                    onValueChange={(value) => handleAnswerChange(currentQuestion.id, value)}
+                    disabled={isSubmitted}
+                    className="grid gap-5"
+                  >
+                    {currentQuestion.options.map((option) => (
+                      <Label
+                        key={option.id}
+                        htmlFor={option.id}
+                        className={`flex items-center gap-6 p-6 rounded-3xl border-2 transition-all duration-300 cursor-pointer group hover:shadow-md ${
+                          currentResponse === option.id
+                          ? 'border-primary bg-primary/5 shadow-inner'
+                          : 'border-slate-100 bg-white hover:border-primary/20 hover:bg-slate-50'
+                        }`}
+                      >
+                        <RadioGroupItem value={option.id} id={option.id} className="h-6 w-6 border-2 border-slate-300 text-primary focus:ring-primary shadow-none" />
+                        <span className={`text-lg font-bold transition-colors ${
+                          currentResponse === option.id ? 'text-primary' : 'text-slate-600 group-hover:text-slate-900'
+                        }`}>
+                          {option.option_text}
+                        </span>
+                      </Label>
+                    ))}
+                  </RadioGroup>
+
+                  {/* Navigation Interlock */}
+                  <div className="flex justify-between items-center pt-10 border-t border-slate-100">
+                    <Button
+                      variant="ghost"
+                      onClick={() => setCurrentQuestionIndex(Math.max(0, currentQuestionIndex - 1))}
+                      disabled={currentQuestionIndex === 0 || isSubmitted}
+                      className="group flex items-center gap-3 px-8 py-7 rounded-2xl hover:bg-slate-50 transition-all font-bold text-slate-500 hover:text-slate-800"
+                    >
+                      <ArrowLeft className="h-5 w-5 group-hover:-translate-x-1 transition-transform" />
+                      PREVIOUS
+                    </Button>
+                    <div className="h-1.5 w-16 bg-slate-100 rounded-full hidden sm:block">
+                       <div 
+                         className="h-full bg-primary rounded-full transition-all duration-500" 
+                         style={{ width: `${((currentQuestionIndex + 1) / questions.length) * 100}%` }}
+                       />
+                    </div>
+                    <Button
+                      variant="ghost"
+                      onClick={() => setCurrentQuestionIndex(Math.min(questions.length - 1, currentQuestionIndex + 1))}
+                      disabled={currentQuestionIndex === questions.length - 1 || isSubmitted}
+                      className="group flex items-center gap-3 px-8 py-7 rounded-2xl hover:bg-slate-50 transition-all font-bold text-slate-500 hover:text-slate-800"
+                    >
+                      NEXT
+                      <ArrowRight className="h-5 w-5 group-hover:translate-x-1 transition-transform" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </main>
+
+        {/* Right: Intelligence Navigator */}
+        <aside className="w-full lg:w-96 space-y-8 animate-reveal stagger-1">
+           <Card className="glass-card border-none rounded-[3rem] shadow-premium-sm p-8 flex flex-col h-fit sticky top-32">
+              <div className="mb-8 border-b border-slate-50 pb-6">
+                <h3 className="text-xl font-black text-slate-800 flex items-center gap-3">
+                   <div className="p-2 bg-slate-900 rounded-lg">
+                      <LayoutDashboard className="h-4 w-4 text-white" />
+                   </div>
+                   Navigator
+                </h3>
               </div>
-            </CardContent>
-          </Card>
-        )}
-      </main>
+
+              <div className="grid grid-cols-5 sm:grid-cols-8 lg:grid-cols-5 gap-3 max-h-[400px] overflow-y-auto no-scrollbar pr-1">
+                {questions.map((q, i) => {
+                  const isAnswered = responses[q.id];
+                  const isCurrent = i === currentQuestionIndex;
+                  
+                  return (
+                    <button
+                      key={q.id}
+                      onClick={() => setCurrentQuestionIndex(i)}
+                      className={`
+                        aspect-square rounded-xl text-xs font-black transition-all duration-300 flex items-center justify-center border-2
+                        ${isCurrent 
+                          ? 'border-primary bg-primary text-white scale-110 shadow-lg shadow-primary/20 rotate-3' 
+                          : isAnswered 
+                            ? 'border-emerald-100 bg-emerald-50 text-emerald-600' 
+                            : 'border-slate-100 bg-slate-50 text-slate-400 hover:border-slate-200 hover:bg-slate-100'
+                        }
+                      `}
+                    >
+                      {(i + 1).toString().padStart(2, '0')}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Navigator Legend */}
+              <div className="mt-10 pt-8 border-t border-slate-50 space-y-4">
+                 {[
+                   { label: 'Active Focus', color: 'bg-primary' },
+                   { label: 'Cloud Synced', color: 'bg-emerald-400' },
+                   { label: 'Pending Item', color: 'bg-slate-200' }
+                 ].map((item, i) => (
+                   <div key={i} className="flex items-center gap-3">
+                     <div className={`w-2.5 h-2.5 rounded-full ${item.color}`} />
+                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{item.label}</span>
+                   </div>
+                 ))}
+              </div>
+           </Card>
+
+           <div className="p-8 bg-slate-900 rounded-[2.5rem] shadow-xl text-white relative overflow-hidden group">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-primary group-hover:bg-primary-glow transition-colors opacity-10 blur-2xl -mr-16 -mt-16"></div>
+              <p className="text-[9px] font-black text-white/40 uppercase tracking-[0.2em] mb-4">Assistance Engine</p>
+              <p className="text-xs font-medium text-white/70 leading-relaxed uppercase tracking-widest italic">
+                Proctoring sync active. Your validation progress is securely mirrored to the institutional cloud.
+              </p>
+           </div>
+        </aside>
+      </div>
     </div>
   );
 };
