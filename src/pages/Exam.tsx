@@ -3,9 +3,8 @@ import { useParams, useNavigate } from "react-router-dom";
 import { ExamHeader } from "@/components/exam/ExamHeader";
 import { QuestionPanel } from "@/components/exam/QuestionPanel";
 import { CodeEditor } from "@/components/exam/CodeEditor";
-import { PerformanceMonitor } from "@/components/exam/PerformanceMonitor";
-import { Judge0Service } from "@/services/judge0";
 import { supabase } from "@/integrations/supabase/client";
+import { SectionedExam } from "@/components/exam/section/SectionedExam";
 import { useToast } from "@/hooks/use-toast";
 import { AlertCircle, RefreshCcw, Shield, Wifi, WifiOff, Clock, CheckCircle2, XCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -230,7 +229,7 @@ const ExamLoadingScreen = ({ message, isResume }: { message: string; isResume: b
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 const MAX_RETRIES = 3;
 
-const Exam = () => {
+const LegacyExam = () => {
   const { examId } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -464,21 +463,14 @@ const Exam = () => {
     await initExamSession();
   }, [retryCount, initExamSession]);
 
-  // ─── Judge0 Connection Test ──────────────────────
+  // ─── Judge0 availability ─────────────────────────
+  // Judge0 now lives behind an authenticated HTTPS load balancer and is only
+  // reachable server-side (the `run-code` edge function). The browser can't —
+  // and must not — probe it directly, so we stay optimistic here; run/submit
+  // surface any backend outage via their own error toasts.
   useEffect(() => {
-    const testJudge0 = async () => {
-      const isAvailable = await Judge0Service.testConnection();
-      setJudge0Available(isAvailable);
-      if (!isAvailable) {
-        toast({
-          title: "Code Execution Server",
-          description: "Cannot reach code execution server. Check your network.",
-          variant: "destructive",
-        });
-      }
-    };
-    testJudge0();
-  }, [toast]);
+    setJudge0Available(true);
+  }, []);
 
   // ─── Fetch test cases ────────────────────────────
   const currentQuestion = questions[currentQuestionIndex];
@@ -504,22 +496,40 @@ const Exam = () => {
   }, [currentQuestion?.id]);
 
   // ─── Run Code ────────────────────────────────────
+  // Runs server-side through the `run-code` edge function (run_type: 'run',
+  // which only executes PUBLIC test cases). The browser never talks to Judge0
+  // directly — that would leak hidden test cases and bypass rate limits.
   const handleRunCode = async (code: string, language: string) => {
     if (!questions[currentQuestionIndex]) throw new Error('No active question');
     if (!language || !code) throw new Error('Missing required fields');
+    if (!attempt) throw new Error('No active attempt');
 
     try {
       setSubmissionStatus('processing');
-      const testCasesForJudge0 = testCases.map(tc => ({
-        input: tc.input,
-        expected_output: tc.expected_output
+      const { data, error } = await supabase.functions.invoke('run-code', {
+        body: {
+          attempt_id: attempt.id,
+          question_id: questions[currentQuestionIndex].id,
+          language,
+          code,
+          run_type: 'run',
+        },
+      });
+
+      if (error) throw error;
+      if (!data?.success) throw new Error(data?.message || 'Code execution failed');
+
+      // Map the edge-function result shape -> CodeEditor's TestResult shape.
+      return (data.data.results || []).map((r: any) => ({
+        input: r.input,
+        expectedOutput: r.expected_output,
+        actualOutput: r.actual_output,
+        passed: r.status === 'pass',
+        executionTime: r.time,
+        memoryUsed: r.memory,
       }));
-      const results = await Judge0Service.executeCode(code, language, testCasesForJudge0);
+    } finally {
       setSubmissionStatus('idle');
-      return results;
-    } catch (error) {
-      setSubmissionStatus('idle');
-      throw error;
     }
   };
 
@@ -532,147 +542,43 @@ const Exam = () => {
     try {
       setSubmissionStatus('processing');
 
-      // Try edge function first
-      try {
-        const requestBody = {
+      // Grading is SERVER-AUTHORITATIVE only. The browser never executes code
+      // or writes scores — the `run-code` edge function runs all (hidden) test
+      // cases against Judge0 and persists the submission + score.
+      const { data, error } = await supabase.functions.invoke('run-code', {
+        body: {
           attempt_id: attempt.id,
           question_id: questions[currentQuestionIndex].id,
           language,
           code,
-          run_type: 'submit'
-        };
+          run_type: 'submit',
+        },
+      });
 
-        const { data, error } = await supabase.functions.invoke('run-code', {
-          body: requestBody
-        });
+      if (error) throw error;
+      if (!data?.success) throw new Error(data?.message || 'Submission failed');
 
-        if (error) throw error;
-        if (!data.success) throw new Error(data.message || 'Function returned error');
+      const passedCount = data.data.passed_count || 0;
+      const totalCount = data.data.total_count || 0;
+      const verdict = data.data.verdict || 'failed';
 
-        setSubmissionStatus('idle');
-        const passedCount = data.data.passed_count || 0;
-        const totalCount = data.data.total_count || 0;
-        const verdict = data.data.verdict || 'failed';
+      toast({
+        title: verdict === 'passed' ? "All Tests Passed!" : "Submission Recorded",
+        description: `${passedCount}/${totalCount} test cases passed.`,
+        variant: verdict === 'passed' ? 'default' : 'destructive'
+      });
 
-        toast({
-          title: verdict === 'passed' ? "All Tests Passed!" : "Submission Recorded",
-          description: `${passedCount}/${totalCount} test cases passed.`,
-          variant: verdict === 'passed' ? 'default' : 'destructive'
-        });
-
-        if (currentQuestionIndex < questions.length - 1) {
-          setCurrentQuestionIndex(currentQuestionIndex + 1);
-        }
-
-        window.dispatchEvent(new CustomEvent('examSubmitted', {
-          detail: { testId: test?.id, score: data.data.score || 0, maxScore: data.data.max_score || 100 }
-        }));
-
-        return;
-      } catch (functionError) {
-        // Fallback: Direct Judge0
-        const testCasesForJudge0 = testCases.map(tc => ({
-          input: tc.input,
-          expected_output: tc.expected_output
-        }));
-
-        const results = await Judge0Service.executeCode(code, language, testCasesForJudge0);
-        const passedCount = results.filter(r => r.passed).length;
-        const totalCount = results.length;
-        const verdict = passedCount === totalCount ? 'passed' : 'failed';
-
-        const { data: testQuestion } = await supabase
-          .from('test_questions')
-          .select('points')
-          .eq('test_id', attempt.test_id)
-          .eq('question_id', questions[currentQuestionIndex].id)
-          .single();
-
-        const questionPoints = testQuestion?.points || 100;
-        const scorePercentage = totalCount > 0 ? passedCount / totalCount : 0;
-        const questionScore = Math.round(questionPoints * scorePercentage);
-
-        const { data: submissionData, error: submissionError } = await supabase
-          .from('submissions')
-          .insert({
-            attempt_id: attempt.id,
-            question_id: questions[currentQuestionIndex].id,
-            language, code,
-            run_type: 'submit',
-            passed_count: passedCount,
-            total_count: totalCount,
-            verdict,
-            time_ms: results.reduce((sum, r) => sum + (r.executionTime || 0), 0) / results.length,
-            memory_kb: results.reduce((sum, r) => sum + (r.memoryUsed || 0), 0) / results.length,
-            stdout_preview: results[0]?.actualOutput?.slice(0, 500) || ''
-          })
-          .select()
-          .single();
-
-        if (submissionData) {
-          const caseResults = results.map((result, index) => ({
-            submission_id: submissionData.id,
-            input: result.input,
-            expected_output: result.expectedOutput,
-            actual_output: result.actualOutput,
-            status: result.passed ? 'pass' : 'fail',
-            case_order: index,
-            time_ms: result.executionTime || 0,
-            memory_kb: result.memoryUsed || 0
-          }));
-          await supabase.from('submission_case_results').insert(caseResults);
-        }
-
-        // Update attempt score
-        try {
-          const { data: currentAttempt } = await supabase
-            .from('attempts')
-            .select('score')
-            .eq('id', attempt.id)
-            .single();
-
-          const { data: previousSubmissions } = await supabase
-            .from('submissions')
-            .select('passed_count, total_count')
-            .eq('attempt_id', attempt.id)
-            .eq('question_id', questions[currentQuestionIndex].id)
-            .eq('run_type', 'submit')
-            .order('created_at', { ascending: false });
-
-          let bestScore = 0;
-          if (previousSubmissions && previousSubmissions.length > 0) {
-            bestScore = Math.max(...previousSubmissions.map(sub => {
-              const pct = sub.total_count > 0 ? sub.passed_count / sub.total_count : 0;
-              return Math.round(questionPoints * pct);
-            }));
-          }
-
-          if (questionScore > bestScore) {
-            const newTotalScore = (currentAttempt?.score || 0) - bestScore + questionScore;
-            await supabase.from('attempts').update({ score: newTotalScore }).eq('id', attempt.id);
-          }
-        } catch (scoreError) {
-          console.error('Error updating attempt score:', scoreError);
-        }
-
-        setSubmissionStatus('idle');
-        toast({
-          title: verdict === 'passed' ? "All Tests Passed!" : "Submission Recorded",
-          description: `${passedCount}/${totalCount} test cases passed.`,
-          variant: verdict === 'passed' ? 'default' : 'destructive'
-        });
-
-        if (currentQuestionIndex < questions.length - 1) {
-          setCurrentQuestionIndex(currentQuestionIndex + 1);
-        }
-
-        window.dispatchEvent(new CustomEvent('examSubmitted', {
-          detail: { testId: test?.id, score: questionScore, maxScore: questionPoints }
-        }));
+      if (currentQuestionIndex < questions.length - 1) {
+        setCurrentQuestionIndex(currentQuestionIndex + 1);
       }
+
+      window.dispatchEvent(new CustomEvent('examSubmitted', {
+        detail: { testId: test?.id, score: data.data.score || 0, maxScore: data.data.max_score || 100 }
+      }));
     } catch (error) {
-      setSubmissionStatus('idle');
       throw error;
+    } finally {
+      setSubmissionStatus('idle');
     }
   };
 
@@ -899,11 +805,42 @@ const Exam = () => {
           </div>
         </div>
       </main>
-
-
-      <PerformanceMonitor />
     </div>
   );
+};
+
+// Router entry: a public sectioned exam is reached by its sharing_token, so we
+// probe for one first and hand off to the sectioned runner; otherwise the
+// legacy (single-list) exam flow renders unchanged.
+const Exam = () => {
+  const { examId } = useParams();
+  const [mode, setMode] = useState<'loading' | 'sectioned' | 'legacy'>('loading');
+  const [examName, setExamName] = useState<string | undefined>();
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from('tests')
+        .select('name, is_sectioned, is_public')
+        .eq('sharing_token', examId)
+        .eq('is_public', true)
+        .eq('is_sectioned', true)
+        .maybeSingle();
+      if (cancelled) return;
+      if (data) { setExamName(data.name); setMode('sectioned'); }
+      else setMode('legacy');
+    })();
+    return () => { cancelled = true; };
+  }, [examId]);
+
+  if (mode === 'loading') {
+    return <ExamLoadingScreen message="Loading exam…" isResume={false} />;
+  }
+  if (mode === 'sectioned') {
+    return <SectionedExam sharingToken={examId!} examName={examName} />;
+  }
+  return <LegacyExam />;
 };
 
 export default Exam;

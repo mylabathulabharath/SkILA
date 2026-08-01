@@ -68,7 +68,10 @@ const App = () => {
             <Route path="/progress" element={user ? <Dashboard /> : <Index />} />
             <Route path="/trainer/*" element={user ? <TrainerDashboard /> : <Index />} />
             <Route path="/admin/*" element={user ? <AdminDashboard /> : <Index />} />
-            <Route path="/exam/:examId" element={user ? <Exam /> : <Index />} />
+            {/* Public sectioned exams are reached without login; the Exam
+                component distinguishes a public sharing_token from a legacy
+                (auth-required) exam id. */}
+            <Route path="/exam/:examId" element={<Exam />} />
             <Route path="/mcq" element={user ? <McqDashboard /> : <Index />} />
             <Route path="/mcq/practice" element={user ? <McqDashboard /> : <Index />} />
             <Route path="/mcq/subject/:subjectId" element={user ? <McqSubjectDetail /> : <Index />} />

@@ -1,6 +1,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { initSectionedAttempt, sectionPayload } from '../_shared/exam.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -67,7 +68,7 @@ serve(async (req) => {
     // ─────────────────────────────────────────────
     const { data: test, error: testError } = await supabaseClient
       .from('tests')
-      .select('id, time_limit_minutes, name')
+      .select('id, time_limit_minutes, name, is_sectioned, navigation_mode, timing_mode, overall_time_limit_minutes')
       .eq('id', test_id)
       .single();
 
@@ -187,6 +188,49 @@ serve(async (req) => {
     // ─────────────────────────────────────────────
     console.log('No existing attempts. Creating fresh attempt.');
     const now = new Date();
+
+    // ── Sectioned (professional) exam for a logged-in student ──────────────
+    // Create the attempt with a session token, freeze the randomized paper,
+    // and hand back the same token-based shape the taker runner uses.
+    if (test.is_sectioned) {
+      const sessionToken = crypto.randomUUID();
+      const { data: secAttempt, error: secErr } = await supabaseClient
+        .from('attempts')
+        .insert({
+          user_id: user.id, test_id, status: 'active',
+          started_at: now.toISOString(), score: 0, max_score: 0,
+          meta: { session_token: sessionToken },
+        })
+        .select().single();
+      if (secErr) throw secErr;
+
+      const { first, attemptEndsAt, firstEndsAt, sections } =
+        await initSectionedAttempt(supabaseClient, test, secAttempt.id, now);
+      const questions = await sectionPayload(supabaseClient, secAttempt.id, first.id);
+
+      return new Response(JSON.stringify({
+        success: true,
+        data: {
+          attempt_id: secAttempt.id,
+          session_token: sessionToken,
+          exam: {
+            name: test.name,
+            navigation_mode: test.navigation_mode,
+            timing_mode: test.timing_mode,
+            ends_at: attemptEndsAt,
+          },
+          sections: sections.map((s: any, i: number) => ({
+            id: s.id, title: s.title, type: s.section_type, order_index: s.order_index,
+            status: (test.navigation_mode === 'free' || i === 0) ? 'active' : 'locked',
+          })),
+          current_section: {
+            id: first.id, title: first.title, type: first.section_type,
+            ends_at: firstEndsAt, questions,
+          },
+        },
+      }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
     const durationMs = (test.time_limit_minutes || 60) * 60 * 1000;
     const endsAt = new Date(now.getTime() + durationMs);
 

@@ -1,6 +1,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { authAttempt } from '../_shared/exam.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -15,8 +16,20 @@ const LANGUAGE_IDS = {
   javascript: 63,
 };
 
-const JUDGE0_API_URL = "http://34.14.160.86:2358"; // Updated to match frontend
-const JUDGE0_FALLBACK_URL = "http://34.93.252.188:2358"; // Fallback endpoint
+// Judge0 now sits behind an HTTPS load balancer (Compute Engine MIG backend).
+// Configure as Supabase secrets — never hardcode the endpoint or token:
+//   supabase secrets set JUDGE0_URL=https://judge.yourdomain.com
+//   supabase secrets set JUDGE0_AUTHN_TOKEN=<AUTHN_TOKEN from judge0.conf>
+const JUDGE0_API_URL = Deno.env.get('JUDGE0_URL') ?? '';
+// Fallback is optional; defaults to the primary so a single healthy LB works.
+const JUDGE0_FALLBACK_URL = Deno.env.get('JUDGE0_FALLBACK_URL') ?? JUDGE0_API_URL;
+const JUDGE0_AUTHN_TOKEN = Deno.env.get('JUDGE0_AUTHN_TOKEN') ?? '';
+
+// Auth header the LB-fronted Judge0 requires on every request.
+const judge0Headers = {
+  'Content-Type': 'application/json',
+  'X-Auth-Token': JUDGE0_AUTHN_TOKEN,
+};
 
 const processTestCases = async (testCases: any[], code: string, language: string) => {
   const languageId = LANGUAGE_IDS[language as keyof typeof LANGUAGE_IDS];
@@ -62,9 +75,7 @@ const executeSingleTestCase = async (testCase: any, code: string, languageId: nu
     // Try main endpoint first
     submissionResponse = await fetch(`${JUDGE0_API_URL}/submissions`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: judge0Headers,
       body: JSON.stringify({
         source_code: code,
         language_id: languageId,
@@ -88,9 +99,7 @@ const executeSingleTestCase = async (testCase: any, code: string, languageId: nu
     // Try fallback endpoint
     submissionResponse = await fetch(`${JUDGE0_FALLBACK_URL}/submissions`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: judge0Headers,
       body: JSON.stringify({
         source_code: code,
         language_id: languageId,
@@ -121,9 +130,7 @@ const executeSingleTestCase = async (testCase: any, code: string, languageId: nu
   do {
     await new Promise(resolve => setTimeout(resolve, 500));
     const resultResponse = await fetch(`${pollUrl}/submissions/${submission.token}`, {
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: judge0Headers,
     });
     result = await resultResponse.json();
     attempts++;
@@ -252,6 +259,87 @@ const updateAttemptScore = async (attemptId: string, questionId: string, submiss
   }
 };
 
+// Sectioned-exam code execution: taker authenticates with an attempt session
+// token (no JWT). The question must be in the attempt's FROZEN set and belong
+// to an ACTIVE section. Stores the submission tagged with attempt_question_id;
+// scoring happens later in submit-section (not here).
+const handleSectionedRun = async (body: any, supabaseClient: any) => {
+  const { attempt_id, session_token, attempt_question_id, language, code, run_type } = body;
+  if (!attempt_id || !session_token || !attempt_question_id || !language || !code || !run_type) {
+    return new Response(JSON.stringify({ success: false, error_code: 'MISSING_FIELDS', message: 'Missing required fields for sectioned run' }),
+      { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  }
+
+  const attempt = await authAttempt(supabaseClient, attempt_id, session_token);
+  if (!attempt) return new Response(JSON.stringify({ success: false, error_code: 'INVALID_TOKEN', message: 'Invalid or expired exam session' }),
+    { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  if (attempt.status !== 'active') return new Response(JSON.stringify({ success: false, error_code: 'NOT_ACTIVE', message: 'This attempt is no longer active' }),
+    { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+  // The frozen question must belong to this attempt and be a coding question.
+  const { data: aq } = await supabaseClient.from('attempt_questions')
+    .select('id, section_id, question_id').eq('id', attempt_question_id).eq('attempt_id', attempt_id).maybeSingle();
+  if (!aq || !aq.question_id) return new Response(JSON.stringify({ success: false, error_code: 'INVALID_QUESTION', message: 'Question not in this attempt' }),
+    { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+  const { data: prog } = await supabaseClient.from('attempt_section_progress')
+    .select('status').eq('attempt_id', attempt_id).eq('section_id', aq.section_id).maybeSingle();
+  if (!prog || prog.status !== 'active') return new Response(JSON.stringify({ success: false, error_code: 'SECTION_LOCKED', message: 'This section is not open' }),
+    { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+  if (!LANGUAGE_IDS[language as keyof typeof LANGUAGE_IDS]) {
+    return new Response(JSON.stringify({ success: false, error_code: 'LANG_NOT_SUPPORTED', message: `Language '${language}' not supported` }),
+      { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  }
+
+  // run -> public cases only; submit -> all cases.
+  let tcQuery = supabaseClient.from('question_test_cases').select('*').eq('question_id', aq.question_id).order('order_index');
+  if (run_type === 'run') tcQuery = tcQuery.eq('is_public', true);
+  const { data: testCases } = await tcQuery;
+  if (!testCases || testCases.length === 0) {
+    return new Response(JSON.stringify({ success: false, error_code: 'NO_TEST_CASES', message: 'No test cases for this question' }),
+      { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  }
+
+  const { results, passedCount, totalTime, totalMemory } = await processTestCases(testCases, code, language);
+  const avgTime = Math.round(totalTime / testCases.length);
+  const avgMemory = Math.round(totalMemory / testCases.length);
+  const verdict = passedCount === testCases.length ? 'passed' : 'failed';
+
+  // Store submission (tagged with the frozen question). No score update here.
+  const { data: submissionData } = await supabaseClient.from('submissions').insert({
+    attempt_id, question_id: aq.question_id, attempt_question_id,
+    language, code, run_type,
+    passed_count: passedCount, total_count: testCases.length,
+    time_ms: avgTime, memory_kb: avgMemory, verdict,
+    stdout_preview: results[0]?.actual_output?.slice(0, 500) || '',
+  }).select().single();
+
+  if (submissionData) {
+    const caseResults = results.map((r: any) => ({
+      submission_id: submissionData.id,
+      case_order: r.case_order,
+      input: r.input,
+      expected_output: r.expected_output,
+      actual_output: r.actual_output,
+      status: r.status,
+    }));
+    await supabaseClient.from('submission_case_results').insert(caseResults);
+  }
+
+  // 'run' never reveals hidden cases (we only fetched public ones); 'submit'
+  // returns pass/fail counts but the detailed hidden results stay server-side.
+  const safeResults = run_type === 'submit' ? [] : results;
+  return new Response(JSON.stringify({
+    success: true,
+    data: {
+      submission_id: submissionData?.id, status: 'completed',
+      passed_count: passedCount, total_count: testCases.length,
+      verdict, time_ms: avgTime, memory_kb: avgMemory, results: safeResults,
+    },
+  }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+};
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -275,6 +363,10 @@ serve(async (req) => {
       }
     });
 
+    // Sectioned-exam takers authenticate with an attempt session token (no JWT).
+    if (body.session_token) {
+      return await handleSectionedRun(body, supabaseClient);
+    }
 
     const authHeader = req.headers.get('Authorization');
     console.log('Auth header present:', !!authHeader);
