@@ -30,3 +30,5 @@ dist-ssr
 
 # Supabase temp files
 supabase/.temp/
+# Claude Code local config
+.claude/

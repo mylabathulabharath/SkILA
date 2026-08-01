@@ -1,0 +1,59 @@
+# ==========================================================================
+# CONTROL-PLANE stack — runs on ONE VM (c2-standard-8).
+# Postgres + Redis + Judge0 API server, co-located via docker-compose.
+# The worker MIG connects to THIS VM's internal IP for db + redis.
+#
+#   docker compose -f docker-compose.control.yml up -d
+#
+# Before starting: in judge0.conf set REDIS_HOST/POSTGRES_HOST to 127.0.0.1
+# for the server container (it shares the network with db+redis here).
+# ==========================================================================
+name: judge0-control
+
+services:
+  server:
+    image: judge0/judge0:1.13.1
+    # API server only — no isolate here, so no privileged needed.
+    volumes:
+      - ./judge0.conf:/judge0.conf:ro
+    ports:
+      # Exposed to the LB / internal network only. Firewall restricts :2358
+      # to the load balancer + health-check ranges (see provision.sh).
+      - "2358:2358"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: always
+
+  db:
+    image: postgres:16.2
+    env_file: judge0.conf
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: always
+
+  redis:
+    image: redis:7.2.4
+    command:
+      [
+        "bash",
+        "-c",
+        'docker-entrypoint.sh --appendonly no --requirepass "$${REDIS_PASSWORD}"',
+      ]
+    env_file: judge0.conf
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $${REDIS_PASSWORD} ping | grep PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: always
+
+volumes:
+  postgres-data:

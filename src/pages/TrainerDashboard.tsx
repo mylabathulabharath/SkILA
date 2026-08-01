@@ -25,6 +25,7 @@ import { useNavigate } from "react-router-dom";
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader";
 import { useToast } from "@/hooks/use-toast";
 import { CreateExamModal } from "@/components/trainer/CreateExamModal";
+import { CreateSectionedExamModal } from "@/components/trainer/exam-builder/CreateSectionedExamModal";
 import { CreateQuestionModal } from "@/components/trainer/CreateQuestionModal";
 import { ExcelUploadModal } from "@/components/trainer/ExcelUploadModal";
 import { CreateMcqQuestionModal } from "@/components/trainer/mcq/CreateMcqQuestionModal";
@@ -572,7 +573,8 @@ const TrainerDashboard = () => {
                     <CardTitle className="text-2xl font-bold">Assessments</CardTitle>
                     <p className="text-sm text-muted-foreground">Manage ongoing and upcoming tests</p>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-wrap justify-end">
+                    <CreateSectionedExamModal onExamCreated={handleExamCreated} />
                     <CreateExamModal onExamCreated={handleExamCreated} />
                     <CreateMcqTestModal onTestCreated={handleExamCreated} />
                   </div>

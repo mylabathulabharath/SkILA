@@ -1,0 +1,27 @@
+# ==========================================================================
+# WORKER stack — baked into the MIG image, runs on every autoscaled node
+# (c2-standard-16). Workers ONLY — they pull jobs from the control VM's
+# shared Redis and write results to the shared Postgres.
+#
+# In judge0.conf on the worker image, REDIS_HOST/POSTGRES_HOST MUST be the
+# control VM's INTERNAL IP (not 127.0.0.1).
+#
+#   docker compose -f docker-compose.worker.yml up -d --scale workers=24
+#
+# ~24 workers on a 16-vCPU node = ~1.5 workers/vCPU, right for the ~2s
+# CPU-bound jobs. Adjust after load testing.
+# ==========================================================================
+name: judge0-worker
+
+services:
+  workers:
+    image: judge0/judge0:1.13.1
+    command: ["./scripts/workers"]
+    # isolate sandbox REQUIRES privileged — the whole reason we are on
+    # Compute Engine and not Cloud Run.
+    privileged: true
+    volumes:
+      - ./judge0.conf:/judge0.conf:ro
+    restart: always
+    # No ports: workers never accept inbound traffic; they only reach out
+    # to the control VM's Redis/Postgres over the internal VPC.

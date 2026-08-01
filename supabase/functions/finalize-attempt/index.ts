@@ -1,6 +1,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { authAttempt, finalizeAttempt } from '../_shared/exam.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -18,14 +19,33 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
+    const body = await req.json();
+
+    // Sectioned-exam finalize (public or logged-in): token-authenticated.
+    // Sums completed-section scores and marks the attempt submitted.
+    if (body.session_token) {
+      const attempt = await authAttempt(supabaseClient, body.attempt_id, body.session_token);
+      if (!attempt) {
+        return new Response(JSON.stringify({ success: false, error_code: 'INVALID_TOKEN', message: 'Invalid or expired exam session' }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      if (attempt.status !== 'active') {
+        return new Response(JSON.stringify({ success: true, data: { score: attempt.score, max_score: attempt.max_score, already: true } }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      const final = await finalizeAttempt(supabaseClient, body.attempt_id);
+      return new Response(JSON.stringify({ success: true, data: final }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
     const authHeader = req.headers.get('Authorization')!;
     const { data: { user } } = await supabaseClient.auth.getUser(authHeader.replace('Bearer ', ''));
-    
+
     if (!user) {
       throw new Error('Unauthorized');
     }
 
-    const { attempt_id } = await req.json();
+    const { attempt_id } = body;
 
     // Validate attempt ownership and status
     const { data: attempt } = await supabaseClient
