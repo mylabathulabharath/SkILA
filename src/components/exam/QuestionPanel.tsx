@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { FileText, TestTube, Image as ImageIcon, Terminal, ShieldAlert, Zap } from "lucide-react";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
 
 interface TestCase {
   input: string;
@@ -94,7 +95,7 @@ export const QuestionPanel = ({ question }: QuestionPanelProps) => {
               prose-ul:my-2 prose-ol:my-2
             ">
               <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
+                remarkPlugins={[remarkGfm, remarkBreaks]}
                 components={{
                   h1: ({ node, children, ...props }) => (
                     <h2 className="text-base font-bold text-foreground mt-5 mb-2 flex items-center gap-2" {...props}>
