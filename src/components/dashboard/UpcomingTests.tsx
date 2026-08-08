@@ -21,6 +21,8 @@ interface UpcomingTest {
   end_at: string;
   status: 'upcoming' | 'active';
   model_type: 'code' | 'mcq';
+  is_public?: boolean;
+  sharing_token?: string | null;
 }
 
 export const UpcomingTests = () => {
@@ -68,12 +70,9 @@ export const UpcomingTests = () => {
 
       console.log('User batch memberships:', userBatches);
 
-      if (!userBatches || userBatches.length === 0) {
-        console.log('User has no batch memberships');
-        setTests([]);
-        return;
-      }
-      const userBatchIds = userBatches.map(b => b.batch_id);
+      // No early return when the user has no batches — public exams are shown
+      // to everyone regardless of batch membership.
+      const userBatchIds = (userBatches || []).map(b => b.batch_id);
       console.log('User batch IDs:', userBatchIds);
 
       // 2. Fetch Coding Test Assignments
@@ -123,6 +122,17 @@ export const UpcomingTests = () => {
         throw mcqAssignmentsError;
       }
       console.log('Raw MCQ test assignments data:', mcqAssignments);
+
+      // 3b. Fetch PUBLIC exams — available to everyone via their share link,
+      //     no batch membership or assignment required.
+      const { data: publicTests, error: publicTestsError } = await supabase
+        .from('tests')
+        .select('id, name, time_limit_minutes, overall_time_limit_minutes, sharing_token, is_sectioned')
+        .eq('is_public', true);
+      if (publicTestsError) {
+        console.error('Error fetching public tests:', publicTestsError);
+      }
+      console.log('Raw public tests data:', publicTests);
 
       // 4. Fetch User Attempts (Both types)
       const { data: codeAttempts, error: codeAttemptsError } = await supabase
@@ -236,6 +246,30 @@ export const UpcomingTests = () => {
         });
       });
 
+      // Process PUBLIC exams — always available (open now), launched via the
+      // sharing token. Skipped if already surfaced as a batch assignment.
+      const assignedIds = new Set(allUpcoming.map(t => t.id));
+      publicTests?.forEach(t => {
+        if (assignedIds.has(t.id)) return;
+        allUpcoming.push({
+          id: t.id,
+          title: t.name,
+          subject: t.is_sectioned ? "Professional Exam" : "Programming",
+          date: "Open now",
+          time: "Available anytime",
+          duration: `${t.overall_time_limit_minutes || t.time_limit_minutes} min`,
+          difficulty: "Medium",
+          type: "Practice",
+          batch_name: "Public",
+          start_at: new Date(0).toISOString(),
+          end_at: new Date(8640000000000000).toISOString(), // always open
+          status: 'active',
+          model_type: 'code',
+          is_public: true,
+          sharing_token: t.sharing_token,
+        });
+      });
+
       // Sort all upcoming tests by start_at
       const sortedTests = allUpcoming.sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
       console.log('Formatted and sorted upcoming tests:', sortedTests);
@@ -296,7 +330,8 @@ export const UpcomingTests = () => {
         return;
       }
 
-      navigate(`/exam/${test.id}`);
+      // Public exams are entered via their sharing token; assigned exams by id.
+      navigate(`/exam/${test.is_public && test.sharing_token ? test.sharing_token : test.id}`);
     } catch (error) {
       console.error('Error starting test:', error);
       toast({
@@ -325,7 +360,7 @@ export const UpcomingTests = () => {
       <div className="flex items-center justify-between pl-2">
         <div>
           <h2 className="text-3xl font-black text-slate-800 tracking-tight">Active Assignments</h2>
-          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mt-1">Pending tests scheduled for your batches</p>
+          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mt-1">Assigned &amp; public assessments available to you</p>
         </div>
         <div className="px-4 py-1.5 bg-primary/10 rounded-full text-[10px] font-black text-primary uppercase tracking-[0.2em] shadow-sm">
           {tests.length} ASSESSMENTS
