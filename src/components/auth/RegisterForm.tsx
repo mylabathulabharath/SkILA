@@ -69,7 +69,7 @@ export const RegisterForm = () => {
     try {
       const redirectUrl = "https://exam.globaloneservices.com/";
 
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
         options: {
@@ -84,10 +84,17 @@ export const RegisterForm = () => {
         throw error;
       }
 
-      toast({
-        title: "Account Created!",
-        description: "Registration successful! You can now log in.",
-      });
+      // With email confirmation OFF, signUp returns a session → log straight in.
+      // With it ON, no session → tell them to check their email.
+      if (data.session) {
+        toast({ title: "Welcome to SkILA!", description: "Your account is ready." });
+        navigate("/dashboard");
+      } else {
+        toast({
+          title: "Account Created!",
+          description: "Please check your email to confirm your account, then log in.",
+        });
+      }
     } catch (error: any) {
       toast({
         title: "Registration Error",
